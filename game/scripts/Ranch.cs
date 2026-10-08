@@ -47,6 +47,7 @@ public partial class Ranch : Node3D
         var zone = ZoneExtractor.Extract(assets, scene, zoneName);
         var layers = PhysicsLayers.Read(assets);
         var rig = PlayerRig.Read(assets, scene);
+        var lighting = SceneLighting.Read(assets, scene);
         var read = clock.ElapsedMilliseconds;
 
         var world = new WorldAssets(assets);
@@ -56,7 +57,7 @@ public partial class Ranch : Node3D
                  $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
                  $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
 
-        AddEnvironment();
+        AddEnvironment(lighting);
 
         var player = new PlayerController { Name = "Player" };
         AddChild(player);
@@ -80,35 +81,51 @@ public partial class Ranch : Node3D
         }
     }
 
-    private void AddEnvironment()
+    // Sky, fog, ambient light and sun use the original scene's starting values.
+    private void AddEnvironment(SceneLighting light)
     {
+        var horizon = UnityConvert.Color(light.HorizonColor ?? light.FogColor);
+        var top = UnityConvert.Color(light.SkyColor ?? new System.Numerics.Vector4(0.33f, 0.58f, 0.92f, 1));
         var sky = new ProceduralSkyMaterial
         {
-            SkyTopColor = new Color(0.33f, 0.58f, 0.92f),
-            SkyHorizonColor = new Color(0.72f, 0.84f, 0.95f),
-            GroundHorizonColor = new Color(0.72f, 0.84f, 0.95f),
-            GroundBottomColor = new Color(0.35f, 0.4f, 0.45f),
+            SkyTopColor = top,
+            SkyHorizonColor = horizon,
+            GroundHorizonColor = horizon,
+            GroundBottomColor = top.Darkened(0.4f),
             SunAngleMax = 20,
         };
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Sky,
             Sky = new Sky { SkyMaterial = sky },
-            AmbientLightSource = Godot.Environment.AmbientSource.Sky,
-            AmbientLightSkyContribution = 1,
-            AmbientLightEnergy = 1.1f,
+            AmbientLightSource = Godot.Environment.AmbientSource.Color,
+            AmbientLightColor = UnityConvert.Color(light.AmbientColor),
+            AmbientLightEnergy = light.AmbientIntensity,
             TonemapMode = Godot.Environment.ToneMapper.Filmic,
-            FogEnabled = true,
-            FogLightColor = new Color(0.7f, 0.82f, 0.95f),
-            FogDensity = 0.0004f,
+            FogEnabled = light.FogEnabled,
+            FogLightColor = UnityConvert.Color(light.FogColor) with { A = 1 },
             SsaoEnabled = true,
         };
+        if (light.FogMode == SceneLighting.FogLinear)
+        {
+            env.FogMode = Godot.Environment.FogModeEnum.Depth;
+            env.FogDepthBegin = light.FogStart;
+            env.FogDepthEnd = light.FogEnd;
+        }
+        else
+        {
+            // The game thins this per zone at runtime; until zone ambience is read, use a lighter fog.
+            env.FogDensity = light.FogDensity * 0.3f;
+        }
+        env.FogSkyAffect = 0;
         AddChild(new WorldEnvironment { Environment = env });
+
+        var sun = UnityConvert.Transform(System.Numerics.Matrix4x4.CreateFromQuaternion(light.SunRotation));
         AddChild(new DirectionalLight3D
         {
-            RotationDegrees = new Vector3(-50, -35, 0),
-            LightEnergy = 1.15f,
-            LightColor = new Color(1f, 0.96f, 0.88f),
+            Basis = sun.Basis,
+            LightColor = UnityConvert.Color(light.SunColor) with { A = 1 },
+            LightEnergy = light.SunIntensity,
             ShadowEnabled = true,
             DirectionalShadowMaxDistance = 250,
         });
