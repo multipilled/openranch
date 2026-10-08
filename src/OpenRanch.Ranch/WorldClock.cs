@@ -15,21 +15,23 @@ public enum DayPhase
 /// </summary>
 public readonly record struct WorldClock(double WorldTime)
 {
+    // World time is in game seconds (docs/formats/save-files.md; static analysis: TimeDirector's
+    // seconds-per-day constant).
     public const double SecondsPerMinute = 60;
     public const double SecondsPerHour = 3600;
     public const double SecondsPerDay = 86400;
 
-    /// <summary>A new game starts at 9:00 on day 1 (code-only fact).</summary>
+    /// <summary>A new game starts at 9:00 on day 1 (static analysis: TimeDirector's start hour, used when a new world is set up).</summary>
     public const double NewGameStart = 9 * SecondsPerHour;
 
-    /// <summary>Sleeping ends at the next 6:00.</summary>
+    /// <summary>Sleeping ends at the next 6:00 (static analysis: the ranch house's sleep button fast-forwards to TimeDirector's next dawn).</summary>
     public const double DawnHour = 6;
 
-    // Where the clock icon changes, as fractions of the day (code-only): night until 0.2, dawn until
-    // 0.3, day until 0.7, dusk until 0.8, then night again.
+    // Where the clock icon changes, as fractions of the day: night until 0.2, dawn until 0.3, day until
+    // 0.7, dusk until 0.8, then night again (static analysis: TimeDirector's time-of-day icon choice).
     public const double NightEnds = 0.2, DawnEnds = 0.3, DayEnds = 0.7, DuskEnds = 0.8;
 
-    /// <summary>The day number shown on the clock, counting from 1.</summary>
+    /// <summary>The day number shown on the clock, counting from 1 (static analysis: TimeDirector's current day).</summary>
     public int Day => 1 + (int)Math.Floor(WorldTime / SecondsPerDay);
 
     /// <summary>How far through the current day: 0 at midnight, 0.5 at noon.</summary>
@@ -54,7 +56,7 @@ public readonly record struct WorldClock(double WorldTime)
 
     /// <summary>
     /// The next time the clock reads <paramref name="hour"/>, strictly after now: later today if that
-    /// hour is still ahead, otherwise tomorrow.
+    /// hour is still ahead, otherwise tomorrow (static analysis: TimeDirector's next-hour lookup).
     /// </summary>
     public double NextAtHour(double hour)
     {
@@ -63,7 +65,7 @@ public readonly record struct WorldClock(double WorldTime)
         return today > WorldTime ? today : today + SecondsPerDay;
     }
 
-    /// <summary>When sleeping from now ends: the next 6:00, to the nearest whole second.</summary>
+    /// <summary>When sleeping from now ends: the next 6:00, to the nearest whole second (static analysis: TimeDirector rounds a fast-forward target to whole seconds).</summary>
     public double WakeTime => Math.Round(NextAtHour(DawnHour), MidpointRounding.AwayFromZero);
 
     public override string ToString() => $"Day {Day}, {MinuteOfDay / 60:00}:{MinuteOfDay % 60:00}";

@@ -36,7 +36,7 @@ openranch. The Slimepedia is the exception the original makes itself: it stores 
   version 12 save on the development PC. Each has the site's id (shared with the world scene), what
   is built there, the upgrades bought and the state of what is built. See [plots.md](plots.md).
 - **Access doors.** The doors to the ranch's expansions, by id, each with its state (locked, open
-  and so on).
+  or closed; `AccessDoor.State`).
 - **Palettes.** The colour palette chosen for each paintable part of the ranch.
 - **Area catch-up times.** For each ranch area the player has left, when it was last simulated.
 - **Actors.** Every slime, animal, piece of food, plort, crafting material and so on lying in the
@@ -46,7 +46,8 @@ openranch. The Slimepedia is the exception the original makes itself: it stores 
   Gordos are not actors; they are part of the world.
 - **Slimepedia.** The entries unlocked, tutorials completed, unlock popups still to show, and how
   many unlocks have already counted toward progress.
-- **Mail.** Each letter's type, its message key and whether it has been read.
+- **Mail.** Each letter's type (personal, upgrade or exchange; `MailDirector.Type`), its message key
+  and whether it has been read.
 - **Gadgets.** Gadgets placed on gadget sites, by site id, with what they hold, extractor timers,
   bait, a snared gordo, fashions and drones (position, cargo, battery and programs); gadgets owned
   but not placed are counted per gadget in the player part.
@@ -73,6 +74,8 @@ it to version 12.
 
 ## Checked
 
+- Enum names quoted here (moods, door states, mail types) were read from the install's assembly
+  metadata by `Every_stored_enum_is_in_the_install`.
 - `tests/OpenRanch.Ranch.Tests/InstalledRanchTests.cs` imports the newest save of the development
   PC's 2022 ranch (`20220508105930_Game2`, picked by save counter) and compares with the raw save:
   money (player and summary), world time and day, all 41 plots by id, type and upgrades, and the

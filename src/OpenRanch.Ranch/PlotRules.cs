@@ -22,7 +22,10 @@ public enum PlotPurchase
 /// </summary>
 public sealed class PlotRules
 {
-    /// <summary>Upgrades that go on sale only after rewards from another rancher: the upgrade, the progress counter, and the level needed (code-only).</summary>
+    /// <summary>
+    /// Upgrades that go on sale only after rewards from another rancher: the upgrade, the progress
+    /// counter, and the level needed (static analysis: the purchase conditions in GardenUI and CoopUI).
+    /// </summary>
     public static readonly IReadOnlyList<(string Upgrade, string Progress, int Level)> RewardUpgrades =
     [
         ("MIRACLE_MIX", "OGDEN_REWARDS", 1),
@@ -90,7 +93,8 @@ public sealed class PlotRules
     }
 
     // Upgrades named alike but for a final number (STORAGE2, STORAGE3, STORAGE4) are steps of one
-    // series and are bought in order: each needs the one numbered one lower, if the menu sells it.
+    // series and are bought in order: each needs the one numbered one lower, if the menu sells it
+    // (static analysis: SiloUI only offers each storage upgrade once the one before is owned).
     private int? EarlierStep(int type, int upgrade)
     {
         var name = _names.Name(GameEnum.PlotUpgrade, upgrade);

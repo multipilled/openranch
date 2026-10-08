@@ -18,9 +18,9 @@ Code: `src/OpenRanch.Ranch/WorldClock.cs` (`WorldClock`, `DayCycle`, `DayLength`
 - **A new game** starts at 9:00 on day 1, world time 32,400.
 
 Checked: day length and storage read from the original's saves (`docs/formats/save-files.md`); the
-day number and the 9:00 start were studied on a developer's PC from how the original works and are
-code-only facts (`WorldClock.NewGameStart`). The development PC's saves all have world times past
-9:00 on day 1, as they should.
+day number and the 9:00 start come from static analysis of the time director (`TimeDirector`) and
+are code-only facts (`WorldClock.NewGameStart`). All 15 version 12 saves on the development PC have
+world times past 9:00 on day 1, as they should (`Every_supported_save_imports_and_round_trips`).
 
 ## How fast the clock runs
 
@@ -30,11 +30,14 @@ code-only facts (`WorldClock.NewGameStart`). The development PC's saves all have
 - The clock stops while the game is paused (menus, the ranch house screen except while sleeping)
   and does not run in the main menu.
 
-Checked: both values read from the install by `DayLength.Read`; the install test prints them.
+Checked: both values read from the install by `DayLength.Read`; the install test prints them. The
+sleeping value in the install differs from the script's built-in default, so it must be read, not
+assumed. The pausing rules come from static analysis of the time director.
 
 ## Parts of the day
 
-The clock's icon splits the day into four parts (code-only; `WorldClock.NightEnds` and so on):
+The clock's icon splits the day into four parts (code-only, from static analysis of the time
+director's icon choice; `WorldClock.NightEnds` and so on):
 
 | Part | From | To |
 | --- | --- | --- |
@@ -54,8 +57,8 @@ lighting has its own blend, described in day-and-night.md.
 - The world keeps running while the clock runs fast: slimes get hungry, crops grow, timers fire.
   Nothing about sleeping is saved; a save holds only the world time.
 
-Checked: studied on a developer's PC from how the original works (code-only). openranch's
-`DayCycle` does the same and is unit tested.
+Checked: static analysis of the ranch house's sleep button and the time director (code-only).
+openranch's `DayCycle` does the same and is unit tested.
 
 ## Ranch areas the player is away from
 

@@ -40,15 +40,25 @@ public sealed class GameEnums : IGameNames, IDisposable
 
     /// <summary>
     /// The values of one enum, by its label in <see cref="GameEnum"/>: "Outer.Inner" for an enum
-    /// nested in a class (the usual case), or "Namespace.Name".
+    /// nested in a class with no namespace (the usual case), "Namespace.Outer/Inner" for one nested in
+    /// a class inside a namespace, or "Namespace.Name".
     /// </summary>
     public EnumValues Get(string label)
     {
         if (_cache.TryGetValue(label, out var cached))
             return cached;
-        var type = _types.Find(GameScripts.GameAssembly, "", label.Replace('.', '/'));
-        if (type is null && label.LastIndexOf('.') is var dot and > 0)
-            type = _types.Find(GameScripts.GameAssembly, label[..dot], label[(dot + 1)..]);
+        ManagedType? type;
+        if (label.IndexOf('/') is var slash and > 0)
+        {
+            var dot = label.LastIndexOf('.', slash);
+            type = _types.Find(GameScripts.GameAssembly, dot < 0 ? "" : label[..dot], label[(dot + 1)..]);
+        }
+        else
+        {
+            type = _types.Find(GameScripts.GameAssembly, "", label.Replace('.', '/'));
+            if (type is null && label.LastIndexOf('.') is var dot and > 0)
+                type = _types.Find(GameScripts.GameAssembly, label[..dot], label[(dot + 1)..]);
+        }
         if (type is null)
             throw new KeyNotFoundException($"The enum {label} wasn't found in {GameScripts.GameAssembly}.");
         return _cache[label] = EnumValues.Read(type);

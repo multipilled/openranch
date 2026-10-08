@@ -3,8 +3,10 @@ namespace OpenRanch.Ranch;
 /// <summary>
 /// Names of the game's enums whose values <see cref="RanchState"/> stores. The state keeps the
 /// game's own numbers; <see cref="GameEnums"/> turns them into names (such as "PINK_SLIME") by
-/// reading these enums from the player's install. The labels match the ones in
-/// OpenRanch.Formats.Saves.SaveSchemas: "Outer.Inner" for an enum nested in a class.
+/// reading these enums from the player's install. Most labels match the ones in
+/// OpenRanch.Formats.Saves.SaveSchemas ("Outer.Inner" for an enum nested in a class); the three whose
+/// class sits in a namespace give it in full ("Namespace.Outer/Inner"), as the game's assembly
+/// metadata names them.
 /// </summary>
 public static class GameEnum
 {
@@ -25,12 +27,12 @@ public static class GameEnum
     public const string FeedSpeed = "SlimeFeeder.FeedSpeed";
     public const string SpawnResource = "SpawnResource.Id";
     public const string Zone = "ZoneDirector.Zone";
-    public const string RegionSet = "RegionRegistry.RegionSetId";
+    public const string RegionSet = "MonomiPark.SlimeRancher.Regions.RegionRegistry/RegionSetId";
     public const string Emotion = "SlimeEmotions.Emotion";
     public const string ResourceCycleState = "ResourceCycle.State";
     public const string SwitchState = "SwitchHandler.State";
     public const string TreasurePodState = "TreasurePod.State";
-    public const string EchoNoteGordoState = "EchoNoteGordoModel.State";
+    public const string EchoNoteGordoState = "MonomiPark.SlimeRancher.DataModel.EchoNoteGordoModel/State";
     public const string Appearance = "SlimeAppearance.AppearanceSaveSet";
-    public const string Instrument = "InstrumentModel.Instrument";
+    public const string Instrument = "MonomiPark.SlimeRancher.DataModel.InstrumentModel/Instrument";
 }

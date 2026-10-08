@@ -77,6 +77,7 @@ public class InstalledRanchTests(ITestOutputHelper output)
     [SaveFact]
     public void Every_supported_save_imports_and_round_trips()
     {
+        List<string>? plotOrder = null;
         foreach (var path in Saves.Supported)
         {
             var save = SaveImport.ReadSave(path);
@@ -87,6 +88,9 @@ public class InstalledRanchTests(ITestOutputHelper output)
             Assert.Equal(info.ActorCount, ranch.Actors.Count);
             Assert.Equal(info.PlotCount, ranch.Plots.Count);
             Assert.Equal(41, ranch.Plots.Count);
+            Assert.Equal(ranch.Plots.Count, ranch.Plots.Select(p => p.Id).Distinct().Count());
+            plotOrder ??= ranch.Plots.Select(p => p.Id).ToList();
+            Assert.Equal(plotOrder, ranch.Plots.Select(p => p.Id)); // every game lists the same sites in the same order
             Assert.True(ranch.WorldTime >= WorldClock.NewGameStart);
             Assert.Equal(save.Block("pedia").List("unlocked").Count, ranch.Pedia.Unlocked.Count);
             Assert.Equal(save.Block("player").List("mail").Count, ranch.Player.Mail.Count);
@@ -108,8 +112,9 @@ public class InstalledRanchTests(ITestOutputHelper output)
             Assert.NotEmpty(values.Names);
             output.WriteLine($"{label}: {values.Names.Count} values");
         }
+        foreach (var label in new[] { GameEnum.PlotType, GameEnum.Emotion, GameEnum.AccessDoorState, GameEnum.MailType, GameEnum.FeedSpeed, GameEnum.SiloStorage })
+            output.WriteLine($"{label}: " + string.Join(", ", names.Get(label).Names.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key} {kv.Value}")));
         var plotTypes = names.Get(GameEnum.PlotType);
-        output.WriteLine("Plot types: " + string.Join(", ", plotTypes.Names.OrderBy(kv => kv.Key).Select(kv => $"{kv.Key} {kv.Value}")));
         Assert.Equal(plotTypes.Values["CORRAL"], names.Value(GameEnum.PlotType, "CORRAL"));
     }
 

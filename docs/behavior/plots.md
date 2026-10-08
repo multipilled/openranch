@@ -10,8 +10,8 @@ Code: `src/OpenRanch.Ranch/PlotCatalog.cs` (menus and prices read from the insta
 
 - The ranch has a fixed set of **plot sites**, each with an id shared between the world scene and the
   save (for example `plot1234567890`). The main ranch and each expansion (the Lab, the Overgrowth,
-  the Grotto, the Docks) have their own. Every version 12 save on the development PC lists **41**,
-  whether they are built on or not, and always in the same order.
+  the Grotto, the Docks) have their own. Every version 12 save on the development PC (15 saves of
+  three different games) lists the same **41** sites, built on or not, in the same order.
 - Something always stands on a site: an empty plot or one of the six buildings. Building or
   demolishing replaces what stands there; the site stays.
 
@@ -64,8 +64,8 @@ with its items and prices.
 
 ## Rules that are not in the data
 
-These are code-only facts, studied on a developer's PC from how the original works, and named in
-`PlotRules.cs`:
+These are code-only facts, from static analysis of the plot menu scripts (`SiloUI`, `GardenUI`,
+`CoopUI`, `CorralUI`) and the plot model, and are named in `PlotRules.cs` with that source:
 
 - An upgrade can be bought once per plot.
 - **Silo storage is bought in order**: the second storage upgrade needs the first, the third needs
@@ -87,11 +87,14 @@ Each plot in the ranch block (`SRLP`) stores:
 - the site id and the plot type;
 - the upgrades bought, as a list of `LandPlot.Upgrade` values in the order bought;
 - the **auto-feeder**: when it next drops food (world time), how many drops are still queued, and its
-  speed (`SlimeFeeder.FeedSpeed`: normal, slow or fast);
+  speed (`SlimeFeeder.FeedSpeed`: normal, slow or fast; normal is the enum's first value, 0, which
+  is also what a fresh plot holds);
 - when the **plort collector** next empties the corral (world time);
 - for a garden, the **crop** planted (`SpawnResource.Id`) and when it dies (world time);
-- for a silo, its **contents** per storage kind (`SiloStorage.StorageType`), each a list of slots
-  with item and count, and which slot each of the silo's buttons has selected;
+- for a silo, its **contents** per storage kind (`SiloStorage.StorageType`: non-slimes, plorts,
+  food, crafting materials or elder items; the plot's silo uses one kind, other stores share the
+  same scheme), each a list of slots with item and count, and which slot each of the silo's buttons
+  has selected;
 - for an incinerator, the **ash** collected in its trough.
 
 Fields that don't apply to a plot's type keep their zero values. openranch keeps all of these in
