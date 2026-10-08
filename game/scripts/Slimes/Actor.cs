@@ -30,6 +30,9 @@ public partial class Actor : RigidBody3D
     public bool Launched { get; private set; }
     /// <summary>The vacpack reeling it in, if any.</summary>
     public object? CaughtBy { get; set; }
+    /// <summary>The prefab's KeepUpright tuning (stability, speed); speed 0 when it has none.</summary>
+    public float UprightStability { get; set; }
+    public float UprightSpeed { get; set; }
 
     /// <summary>Raised when the item is removed from the game.</summary>
     public event Action<Actor>? Removed;
@@ -43,6 +46,18 @@ public partial class Actor : RigidBody3D
         LinearDampMode = DampMode.Replace;
         AngularDampMode = DampMode.Replace;
         BodyEntered += OnBodyEntered;
+    }
+
+    // KeepUpright: every physics step, a twist that turns the item's up direction (as it will be after
+    // spinning for spin x stability / speed seconds) toward the world's up, times speed^2 x mass.
+    public override void _PhysicsProcess(double delta)
+    {
+        if (UprightSpeed <= 0 || Freeze)
+            return;
+        var spin = AngularVelocity;
+        var up = GlobalBasis.Y.Normalized();
+        var ahead = spin.LengthSquared() > 1e-8f ? up.Rotated(spin.Normalized(), spin.Length() * UprightStability / UprightSpeed) : up;
+        ApplyTorque(ahead.Cross(Vector3.Up) * (UprightSpeed * UprightSpeed * Mass));
     }
 
     /// <summary>Starts flying from the vacpack: corral walls and the shooter don't stop it until it touches something.</summary>

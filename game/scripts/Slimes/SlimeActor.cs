@@ -60,16 +60,9 @@ public partial class SlimeActor : Actor
     /// <summary>Raised for each item the slime produces after digesting.</summary>
     public event Action<SlimeActor, Actor>? Produced;
 
-    public override void _Ready()
-    {
-        base._Ready();
-        // KeepUpright: a slime only turns around the vertical axis.
-        AxisLockAngularX = true;
-        AxisLockAngularZ = true;
-    }
-
     public override void _PhysicsProcess(double delta)
     {
+        base._PhysicsProcess(delta);
         var dt = (float)delta;
         _age += dt;
         Sim.Advance(_catalog.Clock.HoursFor(dt));
@@ -95,9 +88,9 @@ public partial class SlimeActor : Actor
         if (!_grounded)
             return;
         if (_activity == Activity.Food)
-            GoForFood(dt);
+            GoForFood();
         else if (_activity == Activity.Wander)
-            Wander(dt);
+            Wander();
     }
 
     // Picks whichever activity matters most: going for the best food in reach, or wandering.
@@ -149,7 +142,7 @@ public partial class SlimeActor : Actor
         }
     }
 
-    private void GoForFood(float dt)
+    private void GoForFood()
     {
         if (_target is null || !IsInstanceValid(_target) || _target.Consumed || _target.CaughtBy is not null)
         {
@@ -184,17 +177,17 @@ public partial class SlimeActor : Actor
         }
         else if (distance <= SlimeMotion.SteadyPursuitDistance)
         {
-            ApplyCentralForce(dir * (SlimeMotion.SteadyPursuitForce * _pursuitSpeed * Mass * dt));
+            ApplyCentralForce(dir * (SlimeMotion.SteadyPursuitForce * _pursuitSpeed * Mass * _catalog.FixedTimestep));
         }
         else
         {
             var pulse = SlimeMotion.Pulse(_age - _foodStarted);
-            ApplyCentralForce(dir * (SlimeMotion.PulsePursuitForce * Mass * _pursuitSpeed * dt * pulse));
-            ApplyForce(dir * (SlimeMotion.PulseRollForce * Mass * dt * pulse), Vector3.Down * Radius);
+            ApplyCentralForce(dir * (SlimeMotion.PulsePursuitForce * Mass * _pursuitSpeed * _catalog.FixedTimestep * pulse));
+            ApplyForce(dir * (SlimeMotion.PulseRollForce * Mass * _catalog.FixedTimestep * pulse), Vector3.Down * Radius);
         }
     }
 
-    private void Wander(float dt)
+    private void Wander()
     {
         if (_age >= _nextMood)
         {
@@ -217,8 +210,8 @@ public partial class SlimeActor : Actor
             {
                 TurnToward(_heading, 1f, 1f);
                 var pulse = SlimeMotion.Pulse(_age);
-                ApplyCentralForce(Forward * (SlimeMotion.PulsePursuitForce * Mass * _scootSpeed * dt * pulse));
-                ApplyForce(Forward * (SlimeMotion.PulseRollForce * Mass * dt * pulse), Vector3.Down * Radius);
+                ApplyCentralForce(Forward * (SlimeMotion.PulsePursuitForce * Mass * _scootSpeed * _catalog.FixedTimestep * pulse));
+                ApplyForce(Forward * (SlimeMotion.PulseRollForce * Mass * _catalog.FixedTimestep * pulse), Vector3.Down * Radius);
                 break;
             }
         }
@@ -230,10 +223,11 @@ public partial class SlimeActor : Actor
     // Twists toward a direction, judging by where it will face a moment from now (docs/behavior/slimes.md).
     private void TurnToward(Vector3 dir, float speed, float stability)
     {
-        var spin = AngularVelocity.Y;
-        var ahead = Forward.Rotated(Vector3.Up, spin * stability * 0.1f / Math.Max(speed, 0.001f));
-        var twist = ahead.Cross(dir).Y;
-        ApplyTorque(new Vector3(0, twist * speed * speed * Mass, 0));
+        var spin = AngularVelocity;
+        var ahead = spin.LengthSquared() > 1e-8f
+            ? Forward.Rotated(spin.Normalized(), spin.Length() * stability * 0.1f / Math.Max(speed, 0.001f))
+            : Forward;
+        ApplyTorque(ahead.Cross(dir) * (speed * speed * Mass));
     }
 
     // Starts a bite when the slime touches food it will eat now; the food is gone after the bite and

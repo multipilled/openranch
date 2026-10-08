@@ -14,11 +14,14 @@ namespace OpenRanch.Game.Slimes;
 /// <summary>
 /// Milestone 2 in the world: items built from the game's prefabs, slimes that eat and make plorts,
 /// the vacpack on the player, corral walls, the plort market at the ranch and a HUD. Command-line
-/// options after "--": --no-slimes leaves the corral empty; --m2-check runs <see cref="M2Check"/>.
+/// options after "--": --no-slimes leaves the corral empty; --m2-check runs <see cref="M2Check"/>;
+/// --m2-watch N logs what the corral's slimes eat and make for N seconds, then quits.
 /// </summary>
 public partial class M2World : Node3D
 {
     private readonly M2Check? _check;
+    private readonly double _watchSeconds;
+    private double _time;
 
     private M2World(GameInstall install, ZoneExtract zone, PhysicsLayers layers, PlayerController player, float startHour, string[] args)
     {
@@ -55,6 +58,17 @@ public partial class M2World : Node3D
             _check = new M2Check(this, player);
         else if (Array.IndexOf(args, "--no-slimes") < 0)
             Callable.From(SpawnStarters).CallDeferred();
+        if (Array.IndexOf(args, "--m2-watch") is var w and >= 0 && w + 1 < args.Length && double.TryParse(args[w + 1],
+                System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var seconds))
+        {
+            _watchSeconds = seconds;
+            Catalog.Spawned += actor =>
+            {
+                if (actor is SlimeActor slime)
+                    slime.Ate += (s, food) => GD.Print($"m2-watch {_time,6:F1} s: {s.Id} ate {food}, hunger now {s.Sim.Hunger:F2}");
+            };
+            Catalog.Spawned += actor => GD.Print($"m2-watch {_time,6:F1} s: {actor.Id} appeared at {actor.Position.X:F1}, {actor.Position.Y:F1}, {actor.Position.Z:F1}");
+        }
     }
 
     public GameScripts Scripts { get; }
@@ -98,8 +112,24 @@ public partial class M2World : Node3D
         Catalog.Spawn("HEN", At(0.2f, 0.1f));
     }
 
+    public override void _ExitTree()
+    {
+        Catalog.FreeTemplates();
+        Scripts.Dispose();
+    }
+
     public override void _PhysicsProcess(double delta)
     {
+        _time += delta;
+        if (_watchSeconds > 0 && _time >= _watchSeconds)
+        {
+            foreach (var actor in Catalog.Live)
+                GD.Print($"m2-watch end: {actor.Id} at {actor.GlobalPosition.X:F1}, {actor.GlobalPosition.Y:F1}, {actor.GlobalPosition.Z:F1}" +
+                         (actor is SlimeActor s ? $", hunger {s.Sim.Hunger:F2}" : ""));
+            GetTree().Quit();
+            SetPhysicsProcess(false);
+            return;
+        }
         var (_, newDay) = Clock.Advance(delta);
         if (newDay)
             Market.StartDay(Clock.Day);

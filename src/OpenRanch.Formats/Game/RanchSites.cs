@@ -205,6 +205,15 @@ public sealed record VacuumTuning(
 /// <summary>How long a game day lasts in real seconds, from the TimeDirector component. See docs/behavior/slimes.md, "Game time".</summary>
 public static class GameTimeData
 {
+    /// <summary>The original's fixed physics step in seconds: the first field of the TimeManager (class 5) in globalgamemanagers.</summary>
+    public static float FixedTimestep(AssetSet assets)
+    {
+        var settings = assets.File("globalgamemanagers") ?? throw new IOException("globalgamemanagers is missing.");
+        var manager = settings.Objects.FirstOrDefault(o => o.ClassId == 5);
+        var step = manager.ByteSize >= 4 ? assets.Reader(new AssetRef(settings, manager)).ReadSingle() : 0;
+        return step > 0 ? step : throw new InvalidDataException("No TimeManager was found in the install.");
+    }
+
     public static float SecondsPerGameDay(GameScripts scripts)
     {
         var seconds = scripts.OfClass("TimeDirector").Select(t => t.Data.Data!.Get<float>("secsPerGameDay")).FirstOrDefault(s => s > 0);

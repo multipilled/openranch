@@ -50,7 +50,25 @@ public sealed record PrefabMesh(string Path, Matrix4x4 ToRoot, AssetRef Mesh, IR
     IReadOnlyList<AssetRef> FaceLayers);
 
 /// <summary>A collider of a prefab, placed relative to the root like <see cref="PrefabMesh"/>.</summary>
-public sealed record PrefabCollider(string Path, Matrix4x4 ToRoot, ColliderData Collider);
+public sealed record PrefabCollider(string Path, Matrix4x4 ToRoot, ColliderData Collider, PhysicMaterialData? Material = null);
+
+/// <summary>
+/// A physic material (Unity class 134): frictions, bounciness and how each is combined with the other
+/// collider's (0 average, 1 minimum, 2 multiply, 3 maximum).
+/// </summary>
+public sealed record PhysicMaterialData(string Name, float DynamicFriction, float StaticFriction, float Bounciness, int FrictionCombine, int BounceCombine)
+{
+    public static PhysicMaterialData Read(EndianReader r) =>
+        new(r.ReadAlignedString(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadInt32(), r.ReadInt32());
+
+    /// <summary>A collider's material: the reference right after the collider's game object.</summary>
+    public static PhysicMaterialData? Of(AssetSet assets, AssetRef collider)
+    {
+        var r = assets.Reader(collider);
+        PPtr.Read(r); // game object
+        return assets.Read(collider.File, PPtr.Read(r), Read);
+    }
+}
 
 /// <summary>A script component of a prefab with its serialized fields.</summary>
 public sealed record PrefabScript(string Path, Matrix4x4 ToRoot, string Class, SerializedObject Data);
@@ -192,7 +210,7 @@ public sealed class ItemPrefabs
                     {
                         var col = assets.Read(c, x => ColliderData.Read(x, c.ClassId));
                         if (col.Enabled)
-                            colliders.Add(new PrefabCollider(path, toRoot, col));
+                            colliders.Add(new PrefabCollider(path, toRoot, col, PhysicMaterialData.Of(assets, c)));
                         break;
                     }
                     case UnityClassId.MonoBehaviour:

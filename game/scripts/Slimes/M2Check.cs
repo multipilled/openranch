@@ -26,6 +26,7 @@ public sealed class M2Check
     private double _time, _stageStart;
     private Vector3 _hole, _out, _standAt;
     private SlimeActor? _slime, _penned;
+    private Actor? _food;
     private Actor? _plort;
     private string? _ate;
     private double _ateAt;
@@ -126,7 +127,7 @@ public sealed class M2Check
             var side = dir.Cross(Vector3.Up).Normalized();
             _slime = (SlimeActor)_m2.Catalog.Spawn(Slime, feedAt + Vector3.Up * 0.6f);
             _slime.Sim.Hunger = 1f;
-            _m2.Catalog.Spawn(Food, (Ground(feedAt + side * 2f) ?? feedAt + side * 2f) + Vector3.Up * 0.3f);
+            _food = _m2.Catalog.Spawn(Food, (Ground(feedAt + side * 2f) ?? feedAt + side * 2f) + Vector3.Up * 0.3f);
             _slime.Ate += (_, food) => { _ate ??= food; _ateAt = _time; };
             _slime.Produced += (_, item) => { if (item.Id == Plort) _plort ??= item; };
             break;
@@ -158,7 +159,11 @@ public sealed class M2Check
                       $"x mood {_expectedPrice / (entry.BaseValue * _demand):F2}); wallet {_m2.Wallet.Coins}";
         report += $"; a {Penned} thrown at the corral wall {penned}";
         if (_failure.Length > 0)
+        {
             report += $"; failed: {_failure}";
+            if (IsInstanceValid(_slime) && IsInstanceValid(_food))
+                report += $" (slime at {_slime!.GlobalPosition:F1}, hunger {_slime.Sim.Hunger:F2}; carrot at {_food!.GlobalPosition:F1})";
+        }
         Report = report + (Passed ? " -> PASS" : " -> FAIL");
         _stage = Stage.Done;
         return true;

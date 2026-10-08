@@ -28,7 +28,14 @@ public sealed class ItemCatalog
         Actors = actors;
         World = new WorldAssets(scripts.Assets);
         ItemIds = scripts.IdentifiableIds.Values.Keys.ToList();
+        FixedTimestep = GameTimeData.FixedTimestep(scripts.Assets);
     }
+
+    /// <summary>
+    /// The original's fixed physics step. Its slimes push themselves with forces sized by this step,
+    /// so the same forces here use it too, whatever Godot's own step is.
+    /// </summary>
+    public float FixedTimestep { get; }
 
     public GameScripts Scripts { get; }
     public ItemPrefabs Prefabs { get; }
@@ -71,6 +78,12 @@ public sealed class ItemCatalog
         actor.AngularDamp = prefab.Body?.AngularDrag ?? 0f;
         actor.Vacuumable = prefab.RootScript("Vacuumable") is not null && prefab.VacuumSize == 0;
         actor.Radius = Radius(prefab);
+        if (prefab.RootScript("KeepUpright") is { } upright)
+        {
+            actor.UprightStability = upright["stability"] is float st ? st : 0;
+            actor.UprightSpeed = upright["speed"] is float sp ? sp : 0;
+        }
+        actor.PhysicsMaterialOverride = ContactMaterial(prefab.Colliders.FirstOrDefault(c => !c.Collider.IsTrigger)?.Material);
         actor.Visual = BuildVisual(prefab);
         actor.AddChild(actor.Visual);
         foreach (var c in prefab.Colliders.Where(c => !c.Collider.IsTrigger))
@@ -81,6 +94,40 @@ public sealed class ItemCatalog
         Actors.AddChild(actor);
         Spawned?.Invoke(actor);
         return actor;
+    }
+
+    // Unity's default physic material, which the world's colliders use: friction 0.6, no bounce, both averaged.
+    private const float DefaultFriction = 0.6f, DefaultBounce = 0f;
+
+    /// <summary>
+    /// The item's friction and bounce against the world, combined the way Unity combines two materials
+    /// (the stronger of the two combine modes wins; the world's is "average").
+    /// </summary>
+    public static PhysicsMaterial ContactMaterial(PhysicMaterialData? material)
+    {
+        static float Combine(float a, float b, int mode) => mode switch
+        {
+            1 => Math.Min(a, b),
+            2 => a * b,
+            3 => Math.Max(a, b),
+            _ => (a + b) / 2,
+        };
+        if (material is null)
+            return new PhysicsMaterial { Friction = DefaultFriction, Bounce = DefaultBounce };
+        return new PhysicsMaterial
+        {
+            Friction = Combine(material.DynamicFriction, DefaultFriction, material.FrictionCombine),
+            Bounce = Combine(material.Bounciness, DefaultBounce, material.BounceCombine),
+        };
+    }
+
+    /// <summary>Frees the model templates kept for spawning (they live outside the scene tree).</summary>
+    public void FreeTemplates()
+    {
+        foreach (var template in _visuals.Values)
+            template.Free();
+        _visuals.Clear();
+        _materials.Clear();
     }
 
     /// <summary>The radius of the item's solid colliders, the size the vacpack uses to place a shot item.</summary>

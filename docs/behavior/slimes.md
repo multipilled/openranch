@@ -110,7 +110,15 @@ game day lasts (`secsPerGameDay`; 24 real minutes in the release we read), so on
 
 - A slime is a ball that rolls and bounces under physics. Its prefab (the game object the game's
   item lookup list gives for the slime's id) carries the body's collider (a sphere), mass, drag and
-  angular drag. A component keeps it upright: it turns only around the vertical axis.
+  angular drag. Its collider's physics material ("Slime": friction 0.8 dynamic, 0.5
+  static, bounciness 0.6; friction combined by taking the larger value) makes it grip and bounce, so
+  it rolls rather than slides. Its `KeepUpright` component (`stability`, `speed`) rights it: every
+  physics step it twists the slime's up direction, as it will be after spinning for spin ×
+  `stability` ÷ `speed` seconds, toward the world's up, with a strength of `speed`² × mass. Turning
+  toward a heading works the same way with the behaviour's `facingSpeed` and `facingStability`
+  (looking ahead spin × `facingStability` × 0.1 ÷ `facingSpeed`). Read from the game's data and
+  static analysis; in openranch the world counts as Unity's default material (friction 0.6, no
+  bounce) when combining.
 - What the slime looks like is not stored on the prefab itself. The slime definition names its
   default appearance (`AppearancesDefault`), which lists parts (`Structures`); each part names a set
   of model objects, one per level of detail (`Element.Prefabs`, each with a `LODIndex`), the bone of
@@ -150,9 +158,10 @@ slime prefab's components.
   hunger has got from the cutoff toward 1. The jump aims upward and toward the target: the direction
   is straight up plus the direction to the target scaled by the distance over 30 m (at most 1). The
   kick is the strength times the slime's mass. Otherwise it slides toward the target: within 3 m with
-  a steady push of 480 × mass × `pursuitSpeedFactor` (per second), farther out in pulses (150 × mass
+  a steady push (a force) of 480 × mass × `pursuitSpeedFactor` × the original's fixed physics step
+  (the TimeManager's fixed timestep in `globalgamemanagers`), farther out in pulses (150 × mass
   × `pursuitSpeedFactor` times a pulse that swings between 0 and 2 once a second, plus a push of 270 ×
-  mass × pulse at the bottom of the body that rolls it forward).
+  mass × pulse at the bottom of the body that rolls it forward), all sized by the same fixed step.
 - If it hasn't reached the food after `attemptTime` seconds it gives up: its agitation rises by 0.1
   and it ignores food for `giveUpTime` seconds.
 - Tabbies don't have `GotoConsumable`; they stalk their food (`StalkConsumable`: creep up, wait, then
