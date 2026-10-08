@@ -1,7 +1,9 @@
 using System.Globalization;
+using OpenRanch.Formats.Audio;
 using OpenRanch.Formats.Game;
 using OpenRanch.Formats.Saves;
 using OpenRanch.Formats.Scene;
+using OpenRanch.Formats.Text;
 using OpenRanch.Formats.Unity;
 
 namespace OpenRanch.Importer;
@@ -21,6 +23,12 @@ public static class Program
                                            Write a preview PNG of a texture (to a path outside the repo)
           scripts [--game DIR]             Read every script component with layouts worked out from the
                                            game's assemblies, and report how many read cleanly
+          sounds [--export DIR] [--game DIR]
+                                           Convert every sound clip to Ogg Vorbis or WAV in memory and check
+                                           each file; --export writes them to a folder outside the repo.
+                                           Nothing is played.
+          text [--lang en] [--key KEY] [--bundle NAME] [--game DIR]
+                                           Read the game's text in every language; --key shows one message
 
         The game is found through OPENRANCH_GAME_DIR or your Steam libraries.
         Saves default to %USERPROFILE%\AppData\LocalLow\Monomi Park\Slime Rancher.
@@ -38,6 +46,8 @@ public static class Program
                 "zone" => Zone(args[1..]),
                 "texture" => Texture(args[1..]),
                 "scripts" => Scripts(args[1..]),
+                "sounds" => Sounds(args[1..]),
+                "text" => Text(args[1..]),
                 _ => PrintUsage(),
             };
         }
@@ -270,6 +280,131 @@ public static class Program
         Console.WriteLine($"{broken.Count} script types with objects that don't read cleanly:");
         foreach (var (name, (c, b)) in broken.Take(25))
             Console.WriteLine($"  {name}: {b} broken, {c} clean");
+        return 0;
+    }
+
+    private static int Sounds(string[] args)
+    {
+        var install = RequireInstall(args);
+        var export = Option(args, "--export");
+        if (export is not null)
+        {
+            export = Path.GetFullPath(export);
+            if (InsideGitCheckout(export))
+                throw new IOException($"{export} is inside a git checkout; export sounds to a folder outside the repo.");
+            Directory.CreateDirectory(export);
+        }
+
+        using var assets = new AssetSet(install);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var sounds = GameSounds.Load(assets, install);
+        var clips = sounds.Clips;
+        Console.WriteLine($"{clips.Count} sound clips read in {clock.ElapsedMilliseconds} ms");
+        foreach (var g in clips.GroupBy(c => c.Clip.Resource.Path).OrderBy(g => g.Key, StringComparer.Ordinal))
+            Console.WriteLine($"  {g.Key}: {g.Count()} clips, {g.Sum(c => (long)c.Clip.Resource.Size) / 1048576.0:N1} MB");
+        Console.WriteLine("  load types: " + string.Join(", ", clips.GroupBy(c => c.Clip.LoadType).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}")));
+        Console.WriteLine("  imported as: " + string.Join(", ", clips.GroupBy(c => c.Clip.CompressionFormat).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}")));
+        Console.WriteLine("  subsound index: " + string.Join(", ", clips.GroupBy(c => c.Clip.SubsoundIndex).OrderBy(g => g.Key).Select(g => $"{g.Key} x{g.Count()}")) +
+                          $"; {clips.Select(c => c.Name).Distinct(StringComparer.Ordinal).Count()} distinct names");
+
+        // One clip at a time keeps the machine responsive; nothing is played.
+        clock.Restart();
+        var failures = new List<string>();
+        var codecs = new Dictionary<string, int>();
+        var multiSoundBanks = 0;
+        var names = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        long bytesOut = 0;
+        double seconds = 0;
+        foreach (var clip in clips)
+        {
+            try
+            {
+                var sound = sounds.Decode(clip);
+                var info = SoundFileInfo.Read(sound.Format, sound.Data);
+                if (info.Channels != clip.Clip.Channels || info.Frequency != clip.Clip.Frequency)
+                    throw new InvalidDataException($"file is {info.Channels} ch {info.Frequency} Hz, clip says {clip.Clip.Channels} ch {clip.Clip.Frequency} Hz");
+                if (Math.Abs(info.Seconds - clip.Clip.Length) > 0.05 + clip.Clip.Length * 0.01)
+                    throw new InvalidDataException($"file lasts {info.Seconds:F3} s, clip says {clip.Clip.Length:F3} s");
+                if (sound.BankSounds != 1)
+                    multiSoundBanks++;
+                var key = $"{sound.Codec} -> {sound.Extension}";
+                codecs[key] = codecs.GetValueOrDefault(key) + 1;
+                bytesOut += sound.Data.Length;
+                seconds += info.Seconds;
+                if (export is not null)
+                {
+                    var stem = SafeFileName(clip.Name);
+                    var n = names[stem] = names.GetValueOrDefault(stem) + 1;
+                    var file = n == 1 ? $"{stem}.{sound.Extension}" : $"{stem}~{n}.{sound.Extension}";
+                    File.WriteAllBytes(Path.Combine(export, file), sound.Data);
+                }
+            }
+            catch (Exception e) when (e is InvalidDataException or NotSupportedException or IOException)
+            {
+                failures.Add($"  {clip.Name} ({Path.GetFileName(clip.Asset.File.Path)} #{clip.Asset.PathId}): {e.Message}");
+            }
+        }
+        var ok = clips.Count - failures.Count;
+        Console.WriteLine($"{ok} of {clips.Count} clips converted and checked ({100.0 * ok / Math.Max(1, clips.Count):F1}%) " +
+                          $"in {clock.ElapsedMilliseconds} ms: {seconds / 60:N1} minutes of sound, {bytesOut / 1048576.0:N1} MB");
+        Console.WriteLine("  " + string.Join(", ", codecs.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")) +
+                          $"; {multiSoundBanks} banks hold more than one sound");
+        foreach (var f in failures.Take(25))
+            Console.WriteLine(f);
+        if (export is not null)
+            Console.WriteLine($"Wrote {ok} files to {export}");
+        return failures.Count == 0 ? 0 : 1;
+    }
+
+    private static bool InsideGitCheckout(string directory)
+    {
+        for (var dir = new DirectoryInfo(directory); dir is not null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, ".git")) || File.Exists(Path.Combine(dir.FullName, ".git")))
+                return true;
+        return false;
+    }
+
+    private static string SafeFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var safe = new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray()).Trim();
+        return safe.Length == 0 ? "unnamed" : safe;
+    }
+
+    private static int Text(string[] args)
+    {
+        var install = RequireInstall(args);
+        var lang = Option(args, "--lang") ?? GameText.DefaultLanguage;
+        using var assets = new AssetSet(install);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var text = GameText.Load(assets);
+        Console.WriteLine($"{text.Bundles.Count} bundles in {text.Languages.Count} languages read in {clock.ElapsedMilliseconds} ms");
+        foreach (var language in text.Languages)
+        {
+            var bundles = text.Bundles.Where(b => b.Language == language).ToList();
+            var malformed = bundles.Sum(b => b.MalformedLines.Count);
+            var missing = text.BundleNames(GameText.DefaultLanguage).Except(bundles.Select(b => b.Name)).ToList();
+            Console.WriteLine($"  {language}: {bundles.Count} bundles, {bundles.Sum(b => b.Entries.Count):N0} messages" +
+                              (malformed > 0 ? $", {malformed} lines that aren't key = value" : "") +
+                              (missing.Count > 0 ? $", no {string.Join(", ", missing)} (falls back to English)" : ""));
+        }
+
+        if (Option(args, "--key") is { } key)
+        {
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            if (Option(args, "--bundle") is { } bundle)
+                Console.WriteLine($"{lang} {bundle}: {key} = {text.Get(lang, bundle, key) ?? "(missing)"}");
+            else
+            {
+                var found = text.Find(lang, key).ToList();
+                if (found.Count == 0)
+                    Console.WriteLine($"{lang}: no bundle has {key}");
+                foreach (var (b, value) in found)
+                    Console.WriteLine($"{lang} {b.Name}: {key} = {value}");
+            }
+        }
+        else
+            Console.WriteLine($"{lang} bundles: {string.Join(", ", text.BundleNames(lang))}");
         return 0;
     }
 
