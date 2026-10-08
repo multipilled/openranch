@@ -43,7 +43,7 @@ public static class SlimeLooks
             """,
     };
 
-    // The face texture's rows run from the top of the face down, so v is flipped (docs/formats/prefabs.md).
+    // The face texture is sampled with the body's UVs as they are: v = 0 is the bottom of the face (docs/formats/prefabs.md).
     // The layer sits a few millimetres out along the normal so it doesn't fight the body for depth.
     // It is drawn opaque with an alpha cut-off rather than blended: the full-screen fog pass repaints the
     // screen from a copy taken before transparent objects are drawn, which would erase a blended face.
@@ -67,7 +67,7 @@ public static class SlimeLooks
             void fragment() {
                 if (UV.x < 0.0 || UV.x > 1.0)
                     discard;
-                vec4 t = texture(atlas, vec2(UV.x, 1.0 - UV.y));
+                vec4 t = texture(atlas, UV);
                 float a;
                 vec3 c;
                 if (eyes) {

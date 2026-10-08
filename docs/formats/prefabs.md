@@ -59,7 +59,9 @@ those UVs, so the face covers the front half only. The texture holds shapes as s
 than colours: the red channel peaks inside the two eyes, the alpha channel dips along the mouth, and
 the materials give the colours (`_EyeRed`, `_EyeGreen`, `_EyeBlue`; `_MouthTop`, `_MouthMid`,
 `_MouthBot`) and the cut-off points (`_EyeSmoothStepBase`, `_MouthSmoothStepBase`). The texture's
-rows appear to run from the top of the face down, the opposite of the body's v (openranch draws it that way; to be compared with the original).
+rows run the same way as the body's v (bottom to top): sampled unflipped, the face shows two eyes above a smile
+(seen in an openranch capture of a starter pink slime). openranch draws the layers opaque with a 0.5 alpha cut-off,
+because its full-screen fog pass repaints over blended objects.
 
 Body and plort materials have no texture; they colour the model with `_TopColor`, `_MiddleColor` and
 `_BottomColor` from top to bottom. Food and chicken materials colour by ramps: a mask (`_Mask`, or the
