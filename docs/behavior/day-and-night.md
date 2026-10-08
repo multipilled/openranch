@@ -35,3 +35,13 @@ axis by 360 × (f − 0.5) degrees, so at noon they point as stored in the scene
 
 At noon on The Ranch the original reports: fog density 0.005, a dim orange sun at intensity 0.667,
 and a warm flat ambient light. Most of a surface's brightness comes from the ambient light.
+
+## Lamps and cave lights
+
+The scene's point and spot lamps (teal lamps on ranch machines, torches, teleporter glows) keep their
+stored colour, intensity and range. Unity's lamps fade with distance d as 1 / (1 + 25 (d / range)²)
+and stop at the range.
+
+A cave trigger lists the lamps that belong to its cave (each carries a `CaveLightController`). Those
+lamps are off while the player is outside every cave that lists them. On entering, they fade up to
+their stored intensity over the same one second the ambience takes; on leaving, they fade out again.

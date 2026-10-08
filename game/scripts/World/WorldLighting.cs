@@ -8,9 +8,9 @@ using N = System.Numerics;
 namespace OpenRanch.Game.World;
 
 /// <summary>
-/// Sky, ambient light, fog and sun as the original sets them for the zone, the hour and whether the
-/// camera is inside a cave (docs/behavior/day-and-night.md). Falls back to the scene's stored values
-/// when the zone settings can't be read.
+/// Sky, ambient light, fog, sun and the scene's own lamps as the original sets them for the zone,
+/// the hour and whether the camera is inside a cave (docs/behavior/day-and-night.md). Falls back to
+/// the scene's stored values when the zone settings can't be read.
 /// </summary>
 public partial class WorldLighting : Node
 {
@@ -27,16 +27,21 @@ public partial class WorldLighting : Node
     private readonly Godot.Environment _environment;
     private readonly DirectionalLight3D _sun;
     private readonly ShaderMaterial _fog = new() { Shader = FogShader };
+    // How far the camera has gone into each cave trigger (0 outside, 1 after a second inside), by trigger.
+    private readonly Dictionary<string, float> _caveAmount = new();
+    // Lamps a cave trigger switches on, with their stored energy, by controller id.
+    private readonly List<(Light3D Light, float Energy, long Controller)> _caveLights = new();
     private Camera3D? _camera;
     private float _caveDarkness;
     private int _caveZone = -1;
 
-    public WorldLighting(SceneLighting scene, IReadOnlyList<ZoneAmbience> zones, IReadOnlyList<CaveVolume> caves, float hour)
+    public WorldLighting(SceneLighting scene, IReadOnlyList<ZoneAmbience> zones, IReadOnlyList<CaveVolume> caves,
+        IReadOnlyList<LightItem> lights, float hour)
     {
         Name = "Lighting";
         _scene = scene;
         _zones = zones.GroupBy(z => z.Zone).ToDictionary(g => g.Key, g => g.First());
-        _caves = caves.Where(c => c.AffectsLighting).ToList();
+        _caves = caves;
         _hour = hour;
         _environment = new Godot.Environment
         {
@@ -59,6 +64,32 @@ public partial class WorldLighting : Node
             DirectionalShadowMaxDistance = 150,
         };
         AddChild(_sun);
+        foreach (var item in lights)
+            AddLamp(item);
+    }
+
+    // A point or spot light from the scene. Unity's spot angle is the whole cone; Godot's is half of it.
+    private void AddLamp(LightItem item)
+    {
+        Light3D light = item.Type == 0
+            ? new SpotLight3D { SpotRange = item.Range, SpotAngle = Math.Clamp(item.SpotAngle / 2, 1, 89) }
+            : new OmniLight3D { OmniRange = item.Range };
+        light.Name = item.Path.Split('/').Last();
+        light.Transform = UnityConvert.Transform(item.World);
+        light.LightColor = UnityConvert.Color(item.Color) with { A = 1 };
+        // Unity's lamps fade as 1 / (1 + 25 (d / range)^2). Godot's fall off as d^-decay inside the range,
+        // so pick the decay and an energy scale that agree with Unity at 20% and 50% of the range.
+        const float decay = 1.4f;
+        var energy = item.Intensity * 0.5f * MathF.Pow(0.2f * item.Range, decay);
+        light.SetParam(Light3D.Param.Attenuation, decay);
+        light.LightEnergy = energy;
+        light.ShadowEnabled = false;
+        AddChild(light);
+        if (item.CaveController is { } controller)
+        {
+            light.Visible = false;
+            _caveLights.Add((light, energy, controller));
+        }
     }
 
     /// <summary>Draws the fog from this camera and starts the lighting where the camera is.</summary>
@@ -76,6 +107,9 @@ public partial class WorldLighting : Node
                 ExtraCullMargin = 16384,
             });
         }
+        foreach (var cave in _caves)
+            if (cave.Contains(UnityPosition(camera.GlobalPosition)))
+                _caveAmount[cave.Path] = 1;
         _caveZone = CaveZoneAt(camera.GlobalPosition);
         _caveDarkness = _caveZone >= 0 ? 1 : 0;
         Apply();
@@ -85,24 +119,43 @@ public partial class WorldLighting : Node
     {
         if (_camera is null)
             return;
+        var step = (float)delta / CaveTransitionSeconds;
+        var changed = false;
+        var p = UnityPosition(_camera.GlobalPosition);
+        foreach (var cave in _caves.GroupBy(c => c.Path))
+        {
+            var inside = cave.Any(c => c.Contains(p));
+            var amount = _caveAmount.GetValueOrDefault(cave.Key);
+            var next = inside ? Math.Min(1, amount + step) : Math.Max(0, amount - step);
+            if (next != amount)
+            {
+                _caveAmount[cave.Key] = next;
+                changed = true;
+            }
+        }
+
         var zone = CaveZoneAt(_camera.GlobalPosition);
         if (zone >= 0)
             _caveZone = zone;
         var target = zone >= 0 ? 1f : 0f;
-        if (_caveDarkness == target)
-            return;
-        var step = (float)delta / CaveTransitionSeconds;
-        _caveDarkness = target > _caveDarkness ? Math.Min(target, _caveDarkness + step) : Math.Max(target, _caveDarkness - step);
-        Apply();
+        if (_caveDarkness != target)
+        {
+            _caveDarkness = target > _caveDarkness ? Math.Min(target, _caveDarkness + step) : Math.Max(target, _caveDarkness - step);
+            changed = true;
+        }
+        if (changed)
+            Apply();
     }
 
-    // The highest-numbered cave zone whose volume holds the point, or -1 outside every cave.
+    private static N.Vector3 UnityPosition(Vector3 godot) => new(godot.X, godot.Y, -godot.Z);
+
+    // The highest-numbered cave zone whose lighting volume holds the point, or -1 outside every cave.
     private int CaveZoneAt(Vector3 godotPosition)
     {
-        var p = new N.Vector3(godotPosition.X, godotPosition.Y, -godotPosition.Z);
+        var p = UnityPosition(godotPosition);
         var zone = -1;
         foreach (var cave in _caves)
-            if (cave.Zone > zone && cave.Contains(p))
+            if (cave.AffectsLighting && cave.Zone > zone && cave.Contains(p))
                 zone = cave.Zone;
         return zone;
     }
@@ -139,5 +192,14 @@ public partial class WorldLighting : Node
         var turned = _scene.SunRotation * N.Quaternion.CreateFromAxisAngle(N.Vector3.UnitX, day.TurnDegrees * MathF.PI / 180f);
         _sun.Basis = UnityConvert.Transform(N.Matrix4x4.CreateFromQuaternion(turned)).Basis;
         _sun.LightColor = UnityConvert.GammaMatchedLight(ambient, _scene.SunColor, _scene.SunIntensity * strength);
+
+        // Cave lamps shine in proportion to how far the camera is into the caves that list them.
+        foreach (var (light, energy, controller) in _caveLights)
+        {
+            var amount = _caves.Where(c => c.LightControllers.Contains(controller))
+                .Select(c => _caveAmount.GetValueOrDefault(c.Path)).DefaultIfEmpty(0).Max();
+            light.Visible = amount > 0;
+            light.LightEnergy = energy * amount;
+        }
     }
 }

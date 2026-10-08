@@ -61,7 +61,7 @@ public partial class Ranch : Node3D
                  $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
                  $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
 
-        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, state.Hour);
+        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour);
         AddChild(worldLighting);
 
         var player = new PlayerController { Name = "Player" };

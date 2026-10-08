@@ -36,7 +36,15 @@ public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Ho
 }
 
 public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats,
-    IReadOnlyList<CaveVolume> Caves);
+    IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights);
+
+/// <summary>
+/// A point or spot light placed in the world (Unity light types: 0 spot, 2 point). Lights listed by a
+/// cave trigger have <see cref="CaveController"/> set: they are off outside that cave and fade up
+/// inside it (docs/behavior/day-and-night.md).
+/// </summary>
+public sealed record LightItem(string Path, Matrix4x4 World, int Type, Vector4 Color, float Intensity, float Range, float SpotAngle,
+    bool Enabled, long? CaveController);
 
 /// <summary>
 /// A trigger volume that switches the lighting to a cave zone's ambience while the player is inside
@@ -44,7 +52,7 @@ public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderer
 /// volume in the trigger's own space; <see cref="World"/> places it.
 /// </summary>
 public sealed record CaveVolume(string Path, Matrix4x4 World, ColliderShape Shape, Vector3 LocalMin, Vector3 LocalMax, float Radius,
-    int Zone, bool AffectsLighting)
+    int Zone, bool AffectsLighting, IReadOnlyList<long> LightControllers)
 {
     public bool Contains(Vector3 point)
     {
@@ -92,6 +100,7 @@ public static class ZoneExtractor
         var renderers = new List<RenderItem>();
         var colliders = new List<ColliderItem>();
         var caves = new List<CaveVolume>();
+        var lights = new List<LightItem>();
         var lowerLods = new HashSet<long>();
         var hiddenObjects = new HashSet<long>();
         int nodes = 0, inactive = 0, triggers = 0;
@@ -141,13 +150,20 @@ public static class ZoneExtractor
             var path = parentPath.Length == 0 ? go.Name : parentPath + "/" + go.Name;
 
             MeshFilterData? filter = null;
-            (int Zone, bool AffectsLighting)? cave = null;
+            CaveSettingsData? cave = null;
+            long? caveLightController = null;
             foreach (var c in go.Components)
             {
                 if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MeshFilter } f)
                     filter = assets.Read(f, MeshFilterData.Read);
                 else if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MonoBehaviour } script)
-                    cave ??= CaveSettings(assets, script);
+                {
+                    var name = ScriptName(assets, script);
+                    if (name == "CaveTrigger")
+                        cave ??= CaveSettings(assets, script);
+                    else if (name == "CaveLightController")
+                        caveLightController = script.PathId;
+                }
             }
 
             foreach (var c in go.Components)
@@ -170,6 +186,13 @@ public static class ZoneExtractor
                             : new RenderItem(path, world, mesh, 0, -1, materials, false, r.CastShadows, go.Layer));
                         break;
                     }
+                    case UnityClassId.Light:
+                    {
+                        var light = ReadLight(assets, comp);
+                        if (light.Type is 0 or 2 && (light.Enabled || caveLightController is not null))
+                            lights.Add(light with { Path = path, World = world, CaveController = caveLightController });
+                        break;
+                    }
                     case UnityClassId.BoxCollider or UnityClassId.SphereCollider or UnityClassId.CapsuleCollider or UnityClassId.MeshCollider:
                     {
                         var col = assets.Read(comp, x => ColliderData.Read(x, comp.ClassId));
@@ -179,7 +202,8 @@ public static class ZoneExtractor
                         {
                             triggers++;
                             if (cave is { } cs && CaveBounds(assets, scene, col) is { } bounds)
-                                caves.Add(new CaveVolume(path, world, col.Shape, bounds.Min, bounds.Max, col.Radius, cs.Zone, cs.AffectsLighting));
+                                caves.Add(new CaveVolume(path, world, col.Shape, bounds.Min, bounds.Max, col.Radius, cs.Zone, cs.AffectsLighting,
+                                    cs.Lights));
                             continue;
                         }
                         var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
@@ -198,22 +222,52 @@ public static class ZoneExtractor
         Walk(root, Matrix4x4.Identity, "");
 
         return new ZoneExtract(rootName, renderers, colliders,
-            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves);
+            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights);
     }
 
-    /// <summary>Reads a cave trigger script's zone and lighting flag, if this component is one.</summary>
-    private static (int Zone, bool AffectsLighting)? CaveSettings(AssetSet assets, AssetRef behaviour)
+    private sealed record CaveSettingsData(int Zone, bool AffectsLighting, IReadOnlyList<long> Lights);
+
+    private static string? ScriptName(AssetSet assets, AssetRef behaviour)
     {
         var r = assets.Reader(behaviour);
         var (_, enabled, script, _) = Unity.Managed.MonoBehaviourReader.ReadHeader(r);
-        if (!enabled || assets.Resolve(behaviour.File, script) is not { } scriptRef
-            || assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName != "CaveTrigger")
-            return null;
-        var lights = r.ReadInt32();
-        r.Skip(lights * 12); // cave light references
+        return enabled && assets.Resolve(behaviour.File, script) is { } scriptRef
+            ? assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName
+            : null;
+    }
+
+    /// <summary>Reads a cave trigger script: its lights, whether it changes the lighting, and its zone.</summary>
+    private static CaveSettingsData CaveSettings(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        var count = r.ReadInt32();
+        var lights = new List<long>();
+        for (var i = 0; i < count; i++)
+        {
+            var light = PPtr.Read(r);
+            if (light.FileId == 0 && !light.IsNull)
+                lights.Add(light.PathId);
+        }
         var affectsLighting = r.ReadBool();
         r.Align();
-        return (r.ReadInt32(), affectsLighting);
+        return new CaveSettingsData(r.ReadInt32(), affectsLighting, lights);
+    }
+
+    // Light component fields up to the spot angle, in stored order.
+    private static LightItem ReadLight(AssetSet assets, AssetRef light)
+    {
+        var r = assets.Reader(light);
+        r.Skip(12); // game object
+        var enabled = r.ReadBool();
+        r.Align();
+        var type = r.ReadInt32();
+        r.ReadInt32(); // shape
+        var color = r.ReadVector4();
+        var intensity = r.ReadSingle();
+        var range = r.ReadSingle();
+        var spotAngle = r.ReadSingle();
+        return new LightItem("", Matrix4x4.Identity, type, color, intensity, range, spotAngle, enabled, null);
     }
 
     // A trigger collider's extent in its own space: exact for boxes and spheres, the bounding box of
