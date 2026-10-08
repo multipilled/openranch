@@ -63,17 +63,7 @@ public sealed class PlotLayout
     public static PlotLayout Read(GameScripts scripts, SerializedFile scene, string rootName)
     {
         var assets = scripts.Assets;
-        var ids = new Dictionary<long, string>();
-        foreach (var (director, data) in scripts.OfClass("IdDirector"))
-        {
-            if (director.File != scene)
-                continue;
-            var keys = data.Data!.List("persistenceKeys");
-            var values = data.Data!.List("persistenceValues");
-            for (var i = 0; i < Math.Min(keys.Count, values.Count); i++)
-                if (keys[i] is PPtr key && values[i] is string id && assets.Resolve(scene, key) is { } holder)
-                    ids[holder.PathId] = id;
-        }
+        var ids = SceneIds.Read(scripts, scene);
 
         var sites = new List<PlotSite>();
         if (ZoneExtractor.RootObjects(assets, scene).TryGetValue(rootName, out var root))
