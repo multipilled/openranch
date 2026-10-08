@@ -14,6 +14,7 @@ public sealed class WorldAssets
 {
     private static readonly Shader WorldShader = GD.Load<Shader>("res://shaders/sr_world.gdshader");
     private static readonly Shader MaskShader = GD.Load<Shader>("res://shaders/sr_mask.gdshader");
+    private static readonly Shader RampShader = GD.Load<Shader>("res://shaders/sr_ramp.gdshader");
 
     private readonly AssetSet _assets;
     private readonly Dictionary<AssetRef, DecodedMesh> _meshes = new();
@@ -376,7 +377,54 @@ public sealed class WorldAssets
             return m;
         }
 
+        // Vegetables: vertex-colour regions coloured from small ramp textures.
+        if (mat.Keywords.Contains("_VERTEXCOLORMASK_ON") && HasSlot("_RampBlack"))
+        {
+            var m = new ShaderMaterial { Shader = RampShader };
+            m.SetShaderParameter("ramp_red", V(Slot(owner, mat, "_RampRed")));
+            m.SetShaderParameter("ramp_green", V(Slot(owner, mat, "_RampGreen")));
+            m.SetShaderParameter("ramp_blue", V(Slot(owner, mat, "_RampBlue")));
+            m.SetShaderParameter("ramp_black", V(Slot(owner, mat, "_RampBlack")));
+            m.SetShaderParameter("ambient_occlusion", V(Slot(owner, mat, "_AmbientOcclusion")));
+            return m;
+        }
+
+        // House windows fake a room behind the glass; show the room texture under a glossy tinted pane.
+        if (HasSlot("_Interior") && HasSlot("_MatCap"))
+        {
+            var st = St(mat, "_Interior");
+            return new StandardMaterial3D
+            {
+                AlbedoTexture = Slot(owner, mat, "_Interior"),
+                AlbedoColor = (tint * 2.5f).Clamp() with { A = 1 },
+                Uv1Scale = new Vector3(st.X, st.Y, 1),
+                Roughness = 0.15f,
+                MetallicSpecular = 0.8f,
+                DiffuseMode = BaseMaterial3D.DiffuseModeEnum.Lambert,
+            };
+        }
+
+        // Sparkle overlays (the slime portal's shimmer): a faint additive glitter.
+        if (HasSlot("_Sparkles") && !HasSlot("_MainTex"))
+        {
+            return new StandardMaterial3D
+            {
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
+                BlendMode = BaseMaterial3D.BlendModeEnum.Add,
+                AlbedoTexture = Slot(owner, mat, "_Sparkles"),
+                AlbedoColor = new Color(0.35f, 0.35f, 0.35f),
+                DisableFog = true,
+            };
+        }
+
         var standard = new StandardMaterial3D { AlbedoColor = tint, Roughness = 0.85f, MetallicSpecular = 0.3f, DiffuseMode = BaseMaterial3D.DiffuseModeEnum.Lambert };
+        // Untextured metal trims carry only a colour and a shininess.
+        if (mat.Floats.ContainsKey("_Shininess") && !mat.Textures.Any(t => !t.Texture.IsNull))
+        {
+            standard.Metallic = 0.7f;
+            standard.Roughness = 0.35f;
+        }
         var main = Slot(owner, mat, "_MainTex") ?? Slot(owner, mat, "_Diffuse") ?? Slot(owner, mat, "_Albedo");
         if (main is not null)
         {
