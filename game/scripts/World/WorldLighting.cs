@@ -48,6 +48,7 @@ public partial class WorldLighting : Node
             // The original has no tone mapping: colours go to the screen as lit.
             TonemapMode = Godot.Environment.ToneMapper.Linear,
             SsaoEnabled = true,
+            SsaoIntensity = 1,
         };
         AddChild(new WorldEnvironment { Environment = _environment });
         _sun = new DirectionalLight3D

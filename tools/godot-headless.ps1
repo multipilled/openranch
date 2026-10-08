@@ -13,7 +13,7 @@ param(
 $game = Resolve-Path (Join-Path $PSScriptRoot "..\game")
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $Godot
-$psi.Arguments = "--headless --fixed-fps 60 --path `"$game`" -- $GameArgs"
+$psi.Arguments = "--headless --audio-driver Dummy --fixed-fps 60 --path `"$game`" -- $GameArgs"
 $psi.UseShellExecute = $false
 $psi.RedirectStandardOutput = $true
 $psi.RedirectStandardError = $true

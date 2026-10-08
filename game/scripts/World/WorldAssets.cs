@@ -323,6 +323,28 @@ public sealed class WorldAssets
             m.SetShaderParameter("topper_coverage", mat.Float("_TopperCoverage", 0.5f));
             m.SetShaderParameter("use_mesh_uvs", mat.Float("_UseMeshUVs", 0) > 0.5f);
             m.SetShaderParameter("tint", tint);
+
+            void Layer(string slot, string texParam, string stParam, string? flag = null)
+            {
+                var tex = Slot(owner, mat, slot);
+                m.SetShaderParameter(texParam, V(tex));
+                m.SetShaderParameter(stParam, St(mat, slot));
+                if (flag is not null)
+                    m.SetShaderParameter(flag, tex is not null);
+            }
+            if (primarySlot == "_PrimaryTex" && mat.Float("_EnableDetailTex", 1) > 0.5f)
+                Layer("_DetailTex", "detail_tex", "detail_st", "has_detail");
+            Layer("_DetailNoiseMask", "noise_mask", "noise_st");
+            if (topper is not null && mat.Float("_TopperEnableDetailTex", 1) > 0.5f)
+                Layer("_TopperDetailTex", "topper_detail_tex", "topper_detail_st", "has_topper_detail");
+            Layer("_TopperDepth", "topper_depth", "topper_depth_st");
+            Layer("_VerticalRamp", "vertical_ramp", "vertical_ramp_st", "has_vertical_ramp");
+            m.SetShaderParameter("ramp_top", UnityConvert.Color(mat.Color("_RampTop", System.Numerics.Vector4.One)));
+            m.SetShaderParameter("top_ramp_offset", mat.Float("_TopRampOffset", 35));
+            m.SetShaderParameter("top_ramp_scale", mat.Float("_TopRampScale", 30));
+            m.SetShaderParameter("sea_ramp", UnityConvert.Color(mat.Color("_SeaLevelRampLower", System.Numerics.Vector4.One)));
+            m.SetShaderParameter("sea_ramp_offset", mat.Float("_SeaLevelRampOffset", -3));
+            m.SetShaderParameter("sea_ramp_scale", mat.Float("_SeaLevelRampScale", 1));
             return m;
         }
 
@@ -335,11 +357,22 @@ public sealed class WorldAssets
             m.SetShaderParameter("has_strokes", strokes is not null);
             m.SetShaderParameter("paint_strokes", V(strokes));
             m.SetShaderParameter("strokes_st", St(mat, "_PaintStrokes"));
-            for (var i = 0; i < 4; i++)
+            m.SetShaderParameter("strokes_triplanar", mat.Keywords.Contains("_PAINTMASKTRIPLANAR_ON"));
+            m.SetShaderParameter("ao_uv2", mat.Keywords.Contains("_AOUV1_ON"));
+            var overrideTex = Slot(owner, mat, "_Override");
+            m.SetShaderParameter("has_override", overrideTex is not null);
+            m.SetShaderParameter("override_tex", V(overrideTex));
+            m.SetShaderParameter("override_uv2", mat.Keywords.Contains("_OVERRIDEUV1_ON"));
+            m.SetShaderParameter("glow_ramp", V(Slot(owner, mat, "_GlowRamp")));
+            m.SetShaderParameter("glow_multiplier", mat.Float("_GlowMultiplier", 1));
+            // Region colours _Color00 to _Color71: the first digit is the region, the second dark (0) or light (1).
+            Godot.Collections.Array<Vector4> Colors(int shade) => new(Enumerable.Range(0, 8).Select(i =>
             {
-                m.SetShaderParameter($"color{i}0", UnityConvert.Color(mat.Color($"_Color{i}0", System.Numerics.Vector4.Zero)));
-                m.SetShaderParameter($"color{i}1", UnityConvert.Color(mat.Color($"_Color{i}1", System.Numerics.Vector4.Zero)));
-            }
+                var c = UnityConvert.Color(mat.Color($"_Color{i}{shade}", System.Numerics.Vector4.Zero)).SrgbToLinear();
+                return new Vector4(c.R, c.G, c.B, 1);
+            }));
+            m.SetShaderParameter("dark_colors", Colors(0));
+            m.SetShaderParameter("light_colors", Colors(1));
             return m;
         }
 

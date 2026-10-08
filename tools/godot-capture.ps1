@@ -4,6 +4,7 @@
 #   game/override.cfg that is removed afterwards.
 # - Godot is started through WMI, which breaks the chain Windows uses to let a new window take
 #   the foreground, so keyboard and mouse stay with the user.
+# - It plays no sound (dummy audio driver).
 # - It starts at below-normal priority. Godot raises its own priority at startup, so this script
 #   lowers it again while it runs.
 #
@@ -44,7 +45,7 @@ try {
     $userArgs = "--scene ranch --screenshot `"$outFull`" --frames $Frames"
     if ($Camera) { $userArgs += " --camera $Camera" }
     if ($Save) { $userArgs += " --save `"$([System.IO.Path]::GetFullPath($Save))`"" }
-    $commandLine = "`"$Godot`" --path `"$game`" --log-file `"$log`" -- $userArgs"
+    $commandLine = "`"$Godot`" --path `"$game`" --audio-driver Dummy --log-file `"$log`" -- $userArgs"
 
     $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ PriorityClass = [uint32]16384 }
     $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
