@@ -13,6 +13,10 @@ TestResults/
 /cache/
 /dump/
 /extract/
+# Decompiled game code, RE notes with addresses, tool installs: shared by every session, never committed.
+/gamedata/
+# Locks used by tools/with_lock.sh
+/.locks/
 *.assets
 *.resS
 *.resource
