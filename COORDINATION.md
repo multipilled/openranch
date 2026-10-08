@@ -6,10 +6,9 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 | Area | Owner session | Worktree / branch |
 |---|---|---|
-| game/scripts/Slimes, Vacpack, Market; src/OpenRanch.Simulation; tests/OpenRanch.Simulation.Tests; new files in src/OpenRanch.Formats/Game; small hooks in game/scripts/Ranch.cs and Player/PlayerController.cs | SR slimes, vacpack and market in game | openranch-m2 / m2-in-game |
-| game/shaders, game/scripts/World, src/OpenRanch.Formats/Scene; rendering notes in docs/behavior | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
-| src/OpenRanch.Ranch, tests/OpenRanch.Ranch.Tests, docs/formats/openranch-saves.md, plot and ranch notes | SR ranch state and save import | openranch-m3 / m3-ranch-state |
-| src/OpenRanch.Formats/Audio, src/OpenRanch.Formats/Text, docs/formats/audio.md and text.md, importer `sounds` and `text` commands | SR sound and text readers | openranch-assets / assets-audio-text |
+| game/scripts/SaveLoad; new files in src/OpenRanch.Ranch and tests/OpenRanch.Ranch.Tests; the `Hidden` set in src/OpenRanch.Formats/Scene/ZoneExtractor.cs; small hooks in game/scripts/Ranch.cs | SR M3: load a ranch save into The Ranch | openranch-m3load / m3-load-save |
+| game/scripts/World/WorldLighting.cs and new files in game/scripts/World (world clock); sky and fog shaders in game/shaders (not the landscape or paint shaders); docs/behavior/day-and-night.md and day-cycle.md; a small clock hook in game/scripts/Ranch.cs | SR day cycle in game | openranch-daycycle / day-cycle |
+| (paused, not merged: clean-room redo pending) landscape and paint shaders | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
 | README.md, OpenRanch.sln (except adding your own new projects), COORDINATION.md, UNVERIFIED.md structure, tools/, merges | coordinator (SR workstreams) | main checkout |
 
 ## Rules
