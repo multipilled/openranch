@@ -49,6 +49,11 @@ Milestone 2, vacpack and slimes, has its rules in place, headless:
 - A test feeds a Pink slime a carrot, vacuums up its plort and sells it at the price read from your
   copy.
 
+Sound and text: `openranch-import sounds` reads all 953 of the game's sound clips and converts them
+(FMOD banks to Ogg/WAV, in memory or exported to a folder outside the repo), and `openranch-import
+text` reads its 101 text bundles in every language. Formats are in `docs/formats/audio.md` and
+`text.md`.
+
 The full plan, with milestones M0 to M5, is in the project's rewrite plan document.
 
 ## Layout
@@ -111,3 +116,6 @@ GPL-3.0. See [LICENSE](LICENSE).
 `src/OpenRanch.Formats/Unity/Crunch.cs` is an altered version of the crunch texture decoder
 (Copyright (c) 2010-2016 Richard Geldreich, Jr. and Binomial LLC), translated to C#. It keeps the
 original ZLIB license notice at the top of the file.
+
+Sound banks are read with [Fmod5Sharp](https://github.com/SamboyCoding/Fmod5Sharp) (MIT license),
+a NuGet dependency of `OpenRanch.Formats`.
