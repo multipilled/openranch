@@ -45,11 +45,13 @@ public static class SlimeLooks
 
     // The face texture's rows run from the top of the face down, so v is flipped (docs/formats/prefabs.md).
     // The layer sits a few millimetres out along the normal so it doesn't fight the body for depth.
+    // It is drawn opaque with an alpha cut-off rather than blended: the full-screen fog pass repaints the
+    // screen from a copy taken before transparent objects are drawn, which would erase a blended face.
     private static readonly Shader FaceShader = new()
     {
         Code = """
             shader_type spatial;
-            render_mode blend_mix, cull_back, depth_draw_never, diffuse_lambert, specular_disabled;
+            render_mode cull_back, diffuse_lambert, specular_disabled;
 
             uniform sampler2D atlas : filter_linear, repeat_disable;
             uniform bool eyes = true;
@@ -76,10 +78,9 @@ public static class SlimeLooks
                     a = 1.0 - smoothstep(threshold - 0.05, threshold + 0.05, t.a);
                     c = color_a.rgb;
                 }
-                if (a < 0.01)
-                    discard;
                 ALBEDO = c;
                 ALPHA = a;
+                ALPHA_SCISSOR_THRESHOLD = 0.5;
             }
             """,
     };
