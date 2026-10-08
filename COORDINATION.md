@@ -31,3 +31,13 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 7. Decompiled code and RE notes are in the git-ignored gamedata/ of the main checkout
    (D:\Projects\openranch\gamedata, index gamedata/re/SPEC.md). Read only; never copy into tracked files.
 8. Never commit game data; the commit guard must pass.
+
+## Knowledge library and who starts sessions (user, 2026-10-08)
+- **Knowledge library first:** `D:\Local Projects\Knowledge` (`knowledge` skill). Before reverse-engineering, decoding a
+  format, picking an engine approach or debugging a known kind of problem, grep its `index/` and `MAP.md`; every brief
+  links the relevant notes. When a task ends, add anything another project could reuse (extend the existing note,
+  otherwise the template) and run `python tools/lint.py` there.
+- **Workers nest under this project's "TAG workstreams" coordinator:** only the coordinator starts workers
+  (`start_session`), so they show under it in the sidebar. Control (`D:\Local Projects\Master`) sets priorities and
+  messages the coordinator; it never starts this project's workers itself.
+- Every session runs on Opus 5.5 with the 1M window; no hand-overs because of context size.
