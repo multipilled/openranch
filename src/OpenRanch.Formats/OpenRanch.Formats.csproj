@@ -7,4 +7,9 @@
     <RootNamespace>OpenRanch.Formats</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Reads FMOD 5 sound banks (MIT). -->
+    <PackageReference Include="Fmod5Sharp" Version="3.1.0" />
+  </ItemGroup>
+
 </Project>
