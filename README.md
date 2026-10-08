@@ -28,7 +28,12 @@ Milestone 1, walking around The Ranch, is in progress:
   decoder; everything else goes to the GPU as stored.
 - A first-person controller with a jetpack uses the original player's capsule size and slope limit.
 - `--collision-check` drops the player across the area's ground and checks it lands every time.
-- Landscape and painted-object shaders are first approximations.
+- Landscape and painted-object shaders are first approximations; sky, fog, ambient light and the
+  sun come from the scene's own settings.
+- Script data: every one of the game's 37,299 script components (758 script types, from slime
+  diets to zone ambience) reads cleanly, with layouts worked out at runtime from the game's own
+  assemblies through metadata. No game code is loaded or run. `openranch-import scripts --dump
+  SlimeDefinition` shows an example.
 
 The full plan, with milestones M0 to M5, is in the project's rewrite plan document.
 

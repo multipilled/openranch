@@ -19,6 +19,8 @@ public static class Program
                                            collides with, decoding every mesh and texture it uses
           texture NAME --png OUT [--game DIR]
                                            Write a preview PNG of a texture (to a path outside the repo)
+          scripts [--game DIR]             Read every script component with layouts worked out from the
+                                           game's assemblies, and report how many read cleanly
 
         The game is found through OPENRANCH_GAME_DIR or your Steam libraries.
         Saves default to %USERPROFILE%\AppData\LocalLow\Monomi Park\Slime Rancher.
@@ -35,6 +37,7 @@ public static class Program
                 "saves" => Saves(args[1..]),
                 "zone" => Zone(args[1..]),
                 "texture" => Texture(args[1..]),
+                "scripts" => Scripts(args[1..]),
                 _ => PrintUsage(),
             };
         }
@@ -215,6 +218,71 @@ public static class Program
         Console.Error.WriteLine($"No texture named {name}.");
         return 1;
     }
+
+    private static int Scripts(string[] args)
+    {
+        var install = RequireInstall(args);
+        using var assets = new AssetSet(install);
+        using var types = new OpenRanch.Formats.Unity.Managed.ManagedTypes(install.ManagedDirectory);
+        var reader = new OpenRanch.Formats.Unity.Managed.MonoBehaviourReader(assets, types);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var perScript = new Dictionary<string, (int Clean, int Broken)>();
+        int total = 0, clean = 0, unknown = 0;
+        foreach (var path in AssetCensus.SerializedFilePaths(install.DataDirectory))
+        {
+            var file = assets.File(Path.GetFileName(path))!;
+            foreach (var info in file.Objects.Where(o => o.ClassId == UnityClassId.MonoBehaviour))
+            {
+                total++;
+                var mb = reader.Read(new AssetRef(file, info));
+                if (mb.ScriptClass is null)
+                {
+                    unknown++;
+                    continue;
+                }
+                var (c, b) = perScript.GetValueOrDefault(mb.ScriptClass);
+                perScript[mb.ScriptClass] = mb.ReadCleanly ? (c + 1, b) : (c, b + 1);
+                if (mb.ReadCleanly)
+                    clean++;
+            }
+        }
+        Console.WriteLine($"{total:N0} script components, {clean:N0} read cleanly ({100.0 * clean / total:F1}%), " +
+                          $"{unknown:N0} with no script found, {perScript.Count} script types, in {clock.ElapsedMilliseconds} ms");
+        if (Option(args, "--dump") is { } dumpClass)
+        {
+            var shown = 0;
+            foreach (var path in AssetCensus.SerializedFilePaths(install.DataDirectory))
+            {
+                var file = assets.File(Path.GetFileName(path))!;
+                foreach (var info in file.Objects.Where(o => o.ClassId == UnityClassId.MonoBehaviour))
+                {
+                    var mb = reader.Read(new AssetRef(file, info));
+                    if (mb.ScriptClass != dumpClass || shown++ >= 3)
+                        continue;
+                    Console.WriteLine($"--- {dumpClass} '{mb.Name}' in {Path.GetFileName(path)}");
+                    foreach (var (key, value) in mb.Data!.Fields)
+                        Console.WriteLine($"  {key} = {Describe(value)}");
+                }
+            }
+        }
+
+        var broken = perScript.Where(p => p.Value.Broken > 0).OrderByDescending(p => p.Value.Broken).ToList();
+        Console.WriteLine($"{broken.Count} script types with objects that don't read cleanly:");
+        foreach (var (name, (c, b)) in broken.Take(25))
+            Console.WriteLine($"  {name}: {b} broken, {c} clean");
+        return 0;
+    }
+
+    private static string Describe(object? value, int depth = 0) => value switch
+    {
+        null => "null",
+        string s => $"\"{s}\"",
+        PPtr p => p.IsNull ? "(none)" : $"ref({p.FileId}:{p.PathId})",
+        List<object?> list => depth > 1 ? $"[{list.Count} items]" : $"[{string.Join(", ", list.Take(6).Select(v => Describe(v, depth + 1)))}{(list.Count > 6 ? $", ... {list.Count} total" : "")}]",
+        OpenRanch.Formats.Unity.Managed.SerializedObject o => depth > 1 ? $"{{{o.TypeName}}}" : "{" + string.Join(", ", o.Fields.Take(8).Select(f => $"{f.Key}={Describe(f.Value, depth + 1)}")) + "}",
+        float f => f.ToString("0.###"),
+        _ => value.ToString() ?? "",
+    };
 
     private static string Mismatch(byte[] a, byte[] b)
     {
