@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+.idea/
+TestResults/
+
+# Game data must never enter this repo. The importer reads your own copy of
+# Slime Rancher and writes its cache outside the repo; these patterns catch
+# accidental copies.
+/cache/
+/dump/
+/extract/
+*.assets
+*.resS
+*.resource
+*.sav
+*.prf
+*.fsb
+*.bank
+globalgamemanagers
+unity default resources
+unity_builtin_extra
+level[0-9]*
+Assembly-CSharp*.dll
+
+# Local settings (game path, cache path) stay on your machine
+openranch.local.json
+
+# Godot
+game/.godot/
+game/override.cfg

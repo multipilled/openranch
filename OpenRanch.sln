@@ -1,0 +1,49 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{04B7A1D9-60B3-4876-AD7B-C5A502814445}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenRanch.Formats", "src\OpenRanch.Formats\OpenRanch.Formats.csproj", "{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenRanch.Importer", "src\OpenRanch.Importer\OpenRanch.Importer.csproj", "{36909075-D98A-4DA9-8412-5855C9B7624E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{F60CE3FB-E0C2-4BA1-9A0D-4908F66EB85F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenRanch.Formats.Tests", "tests\OpenRanch.Formats.Tests\OpenRanch.Formats.Tests.csproj", "{8774A1F1-89A1-4244-9378-73FCC9A74388}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenRanch.Game", "game\OpenRanch.Game.csproj", "{5FA11A2F-0273-44DD-82B6-6C038967B624}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{36909075-D98A-4DA9-8412-5855C9B7624E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{36909075-D98A-4DA9-8412-5855C9B7624E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{36909075-D98A-4DA9-8412-5855C9B7624E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{36909075-D98A-4DA9-8412-5855C9B7624E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8774A1F1-89A1-4244-9378-73FCC9A74388}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8774A1F1-89A1-4244-9378-73FCC9A74388}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8774A1F1-89A1-4244-9378-73FCC9A74388}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8774A1F1-89A1-4244-9378-73FCC9A74388}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5FA11A2F-0273-44DD-82B6-6C038967B624}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FA11A2F-0273-44DD-82B6-6C038967B624}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5FA11A2F-0273-44DD-82B6-6C038967B624}.Release|Any CPU.ActiveCfg = Debug|Any CPU
+		{5FA11A2F-0273-44DD-82B6-6C038967B624}.Release|Any CPU.Build.0 = Debug|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{02DEECE9-6D6F-4B15-B92A-4F2D9FF91EC1} = {04B7A1D9-60B3-4876-AD7B-C5A502814445}
+		{36909075-D98A-4DA9-8412-5855C9B7624E} = {04B7A1D9-60B3-4876-AD7B-C5A502814445}
+		{8774A1F1-89A1-4244-9378-73FCC9A74388} = {F60CE3FB-E0C2-4BA1-9A0D-4908F66EB85F}
+	EndGlobalSection
+EndGlobal

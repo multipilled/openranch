@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No game data in the repo
+        run: python3 tools/check_no_game_files.py
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Build
+        run: dotnet build OpenRanch.sln --configuration Release
+
+      - name: Test
+        run: dotnet test OpenRanch.sln --configuration Release --no-build
