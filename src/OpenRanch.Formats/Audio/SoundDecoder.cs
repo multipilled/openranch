@@ -11,7 +11,9 @@ public enum SoundFileFormat
 }
 
 /// <summary>A clip turned into a standard sound file, ready for an engine to load from memory.</summary>
-public sealed record DecodedSound(SoundFileFormat Format, byte[] Data, string Codec, int Channels, int Frequency, long SampleCount)
+/// <param name="BankSounds">How many sounds the clip's bank holds (Unity writes one per clip).</param>
+public sealed record DecodedSound(SoundFileFormat Format, byte[] Data, string Codec, int Channels, int Frequency, long SampleCount,
+    int BankSounds = 1)
 {
     public string Extension => Format == SoundFileFormat.Ogg ? "ogg" : "wav";
     public double Seconds => Frequency > 0 ? (double)SampleCount / Frequency : 0;
@@ -68,6 +70,6 @@ public static class SoundDecoder
             _ => throw new NotSupportedException($"{codec} sound rebuilt as unexpected .{extension}."),
         };
         var meta = sample.Metadata;
-        return new DecodedSound(format, data, codec.ToString(), (int)meta.Channels, meta.Frequency, meta.SampleCount);
+        return new DecodedSound(format, data, codec.ToString(), (int)meta.Channels, meta.Frequency, meta.SampleCount, bank.Samples.Count);
     }
 }

@@ -300,15 +300,18 @@ public static class Program
         var sounds = GameSounds.Load(assets, install);
         var clips = sounds.Clips;
         Console.WriteLine($"{clips.Count} sound clips read in {clock.ElapsedMilliseconds} ms");
-        foreach (var g in clips.GroupBy(c => Path.GetFileName(c.Clip.Resource.Path)).OrderBy(g => g.Key, StringComparer.Ordinal))
+        foreach (var g in clips.GroupBy(c => c.Clip.Resource.Path).OrderBy(g => g.Key, StringComparer.Ordinal))
             Console.WriteLine($"  {g.Key}: {g.Count()} clips, {g.Sum(c => (long)c.Clip.Resource.Size) / 1048576.0:N1} MB");
         Console.WriteLine("  load types: " + string.Join(", ", clips.GroupBy(c => c.Clip.LoadType).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}")));
         Console.WriteLine("  imported as: " + string.Join(", ", clips.GroupBy(c => c.Clip.CompressionFormat).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count()}")));
+        Console.WriteLine("  subsound index: " + string.Join(", ", clips.GroupBy(c => c.Clip.SubsoundIndex).OrderBy(g => g.Key).Select(g => $"{g.Key} x{g.Count()}")) +
+                          $"; {clips.Select(c => c.Name).Distinct(StringComparer.Ordinal).Count()} distinct names");
 
         // One clip at a time keeps the machine responsive; nothing is played.
         clock.Restart();
         var failures = new List<string>();
         var codecs = new Dictionary<string, int>();
+        var multiSoundBanks = 0;
         var names = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         long bytesOut = 0;
         double seconds = 0;
@@ -322,6 +325,8 @@ public static class Program
                     throw new InvalidDataException($"file is {info.Channels} ch {info.Frequency} Hz, clip says {clip.Clip.Channels} ch {clip.Clip.Frequency} Hz");
                 if (Math.Abs(info.Seconds - clip.Clip.Length) > 0.05 + clip.Clip.Length * 0.01)
                     throw new InvalidDataException($"file lasts {info.Seconds:F3} s, clip says {clip.Clip.Length:F3} s");
+                if (sound.BankSounds != 1)
+                    multiSoundBanks++;
                 var key = $"{sound.Codec} -> {sound.Extension}";
                 codecs[key] = codecs.GetValueOrDefault(key) + 1;
                 bytesOut += sound.Data.Length;
@@ -342,7 +347,8 @@ public static class Program
         var ok = clips.Count - failures.Count;
         Console.WriteLine($"{ok} of {clips.Count} clips converted and checked ({100.0 * ok / Math.Max(1, clips.Count):F1}%) " +
                           $"in {clock.ElapsedMilliseconds} ms: {seconds / 60:N1} minutes of sound, {bytesOut / 1048576.0:N1} MB");
-        Console.WriteLine("  " + string.Join(", ", codecs.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")));
+        Console.WriteLine("  " + string.Join(", ", codecs.OrderByDescending(p => p.Value).Select(p => $"{p.Key} {p.Value}")) +
+                          $"; {multiSoundBanks} banks hold more than one sound");
         foreach (var f in failures.Take(25))
             Console.WriteLine(f);
         if (export is not null)
@@ -377,8 +383,10 @@ public static class Program
         {
             var bundles = text.Bundles.Where(b => b.Language == language).ToList();
             var malformed = bundles.Sum(b => b.MalformedLines.Count);
+            var missing = text.BundleNames(GameText.DefaultLanguage).Except(bundles.Select(b => b.Name)).ToList();
             Console.WriteLine($"  {language}: {bundles.Count} bundles, {bundles.Sum(b => b.Entries.Count):N0} messages" +
-                              (malformed > 0 ? $", {malformed} lines that aren't key = value" : ""));
+                              (malformed > 0 ? $", {malformed} lines that aren't key = value" : "") +
+                              (missing.Count > 0 ? $", no {string.Join(", ", missing)} (falls back to English)" : ""));
         }
 
         if (Option(args, "--key") is { } key)

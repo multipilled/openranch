@@ -91,5 +91,7 @@ public class TextTests
             Assert.True(names.IsSubsetOf(english), $"{language} has bundles English lacks");
             Assert.NotNull(text.Get(language, "actor", "l.pink_slime"));
         }
+        // Only English has the build bundle; other languages get the English file as a whole.
+        Assert.Equal("en", text.Bundle("de", "build")?.Language);
     }
 }

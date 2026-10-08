@@ -46,7 +46,7 @@ public sealed class GameSounds
 
     public static GameSounds Load(AssetSet assets, GameInstall install) => Load(assets, install.DataDirectory);
 
-    /// <summary>Clips with this name. Names are not unique across the game's files.</summary>
+    /// <summary>Clips with this name. Names are unique in the 1.4.x release, but Unity doesn't require it.</summary>
     public IReadOnlyList<SoundClip> Named(string name) => _byName.TryGetValue(name, out var list) ? list : [];
 
     /// <summary>The FSB5 bank behind a clip, as stored in its <c>.resource</c> file.</summary>

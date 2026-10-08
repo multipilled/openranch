@@ -19,8 +19,9 @@ reference) pairs. Text bundles sit under:
 i18n/<language>/<bundle>
 ```
 
-`<language>` is a lower-case two-letter code (`en`, `de`, `fr`, ...), or a longer tag for a
-regional variant. The counts on the development PC are listed under "What is there".
+`<language>` is a lower-case two-letter code (`en`, `de`, `fr`, ...). The game's lookup would also
+accept a longer tag for a regional variant, but this release has none. The counts are listed under
+"What is there".
 
 ## Bundle files
 
@@ -58,6 +59,18 @@ The game asks for a message by bundle and key in the current language:
 
 `GameText.Get(language, bundle, key)` follows the same order. The game can also name the bundle
 inside the key, written `%bundle:key`; resolving that form is left to the code that shows the text.
+
+## What is there
+
+Read from the Steam release (1.4.x) with `openranch-import text`:
+
+- 10 languages: `de`, `en`, `es`, `fr`, `ja`, `ko`, `pt`, `ru`, `sv`, `zh` (Simplified Chinese
+  is stored under plain `zh`).
+- English has 11 bundles: `achieve`, `actor`, `build`, `exchange`, `global`, `keys`, `mail`,
+  `pedia`, `range`, `tutorial`, `ui`, with 2,816 messages. Every other language has the same
+  bundles except `build`, 2,813 messages each, and gets `build` from English by the whole-file
+  fallback.
+- No line in any bundle is malformed.
 
 ## How this was checked
 

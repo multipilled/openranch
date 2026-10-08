@@ -42,6 +42,7 @@ public class AudioTests
             Assert.True(c.Frequency is >= 8000 and <= 96000, $"{c.Name}: {c.Frequency} Hz");
             Assert.True(c.Length > 0, $"{c.Name}: length {c.Length}");
             Assert.False(c.Resource.IsEmpty, $"{c.Name} has no sound data");
+            Assert.Equal(0, c.SubsoundIndex);
 
             var path = Path.Combine(install.DataDirectory, Path.GetFileName(c.Resource.Path));
             if (!resourceSizes.TryGetValue(path, out var size))
@@ -53,6 +54,7 @@ public class AudioTests
             Assert.True(SoundDecoder.LooksLikeFsb5(magic), $"{c.Name} doesn't start with an FSB5 header");
         }
         Assert.Equal(3, resourceSizes.Count);
+        Assert.Equal(sounds.Clips.Count, sounds.Clips.Select(c => c.Name).Distinct(StringComparer.Ordinal).Count());
     }
 
     // Converts a spread of clips (every 25th, so all three resource files and both short effects
