@@ -98,6 +98,10 @@ public partial class M3Check : Node
         Check(escaped.Count == 0, $"slimes outside a corral after {SettleSeconds} s: {escaped.Count}" +
                                   string.Concat(escaped.Take(5).Select(a => $"\n         {a.Id} at {Unity(a.GlobalPosition)}")));
 
+        // Expansion barriers the save opened (stand-in rule; reported, not checked).
+        report.AppendLine($"  info {_saved.OpenedBarriers.Count} expansion barriers opened" +
+                          string.Concat(_saved.OpenedBarriers.Select(p => "\n         " + p)));
+
         // Money.
         Check(_m2.Wallet.Coins == ranch.Player.Money, $"money: wallet {_m2.Wallet.Coins}, save {ranch.Player.Money}");
 

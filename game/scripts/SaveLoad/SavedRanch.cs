@@ -45,6 +45,8 @@ public sealed class SavedRanch
     public WorldState State { get; }
     /// <summary>The save's slimes and largos standing inside one of the zone's corrals.</summary>
     public IReadOnlyList<SavedSlime> CorralSlimes { get; }
+    /// <summary>The expansion barriers (scene paths) the save has opened, which <see cref="State"/> hides.</summary>
+    public IReadOnlyList<string> OpenedBarriers { get; private init; } = [];
 
     /// <summary>Reads the save and lays its plots out on the sites of <paramref name="zoneName"/>.</summary>
     /// <param name="assets">The asset set the zone is built from; the plots' meshes and materials are taken from it.</param>
@@ -56,6 +58,12 @@ public sealed class SavedRanch
         var layout = PlotLayout.Read(scripts, scene, zoneName);
         var plots = layout.Place(ranch);
         var (hidden, renderers, colliders) = layout.Build(plots);
+        using var names = new GameEnums(install);
+
+        // The expansions the save has opened lose their barriers (a stand-in rule, see ExpansionBarriers).
+        var barriers = ExpansionBarriers.Read(scripts, scene, zoneName, names);
+        var opened = barriers.Where(b => ExpansionBarriers.IsOpen(b, ranch, names)).ToList();
+        hidden.UnionWith(opened.Select(b => b.GameObject));
 
         // The prefabs were read through the scripts' own asset set, which closes with it.
         AssetRef Rebase(AssetRef r) => new(assets.File(ExternalName(r.File.Path, install)) ?? throw new IOException($"{r.File.Path} is missing."), r.Info);
@@ -66,7 +74,6 @@ public sealed class SavedRanch
         }).ToList();
         colliders = colliders.Select(c => c with { Mesh = c.Mesh is { } m ? Rebase(m) : null }).ToList();
 
-        using var names = new GameEnums(install);
         var corrals = plots.Where(p => p.Prefab.Regions.Count > 0).ToList();
         var slimes = new List<SavedSlime>();
         foreach (var actor in ranch.Actors)
@@ -78,7 +85,7 @@ public sealed class SavedRanch
         }
 
         var state = new WorldState(ranch.Player.Progress, (float)ranch.Clock.Hour, Hidden: hidden);
-        return new SavedRanch(ranch, plots, state, renderers, colliders, slimes);
+        return new SavedRanch(ranch, plots, state, renderers, colliders, slimes) { OpenedBarriers = opened.Select(b => b.Path).ToList() };
     }
 
     // The name an external reference would use for a file of the install's data folder.
