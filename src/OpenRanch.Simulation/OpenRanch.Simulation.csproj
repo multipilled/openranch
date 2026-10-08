@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Game rules (slimes, vacpack, plort market) as plain .NET, with no engine dependency, so they
+       run headless in tests and the Godot project drives them. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>OpenRanch.Simulation</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenRanch.Formats\OpenRanch.Formats.csproj" />
+  </ItemGroup>
+
+</Project>

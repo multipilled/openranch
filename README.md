@@ -35,6 +35,14 @@ Milestone 1, walking around The Ranch, is in progress:
   assemblies through metadata. No game code is loaded or run. `openranch-import scripts --dump
   SlimeDefinition` shows an example.
 
+Milestone 2, vacpack and slimes, has its rules in place, headless:
+
+- `src/OpenRanch.Simulation` holds slime hunger and eating, the 4-slot vacpack and the plort market
+  with saturation, as plain .NET. Diets, favorites, plorts, eating tuning and market prices are read
+  from your install (`SlimeData`, `MarketData`); the rules are in `docs/behavior/`.
+- A test feeds a Pink slime a carrot, vacuums up its plort and sells it at the price read from your
+  copy.
+
 The full plan, with milestones M0 to M5, is in the project's rewrite plan document.
 
 ## Layout
@@ -42,6 +50,7 @@ The full plan, with milestones M0 to M5, is in the project's rewrite plan docume
 | Folder | What it holds |
 | --- | --- |
 | `src/OpenRanch.Formats` | Readers for Unity serialized files and Slime Rancher saves, plain .NET 8, tested without Godot |
+| `src/OpenRanch.Simulation` | Game rules (slimes, vacpack, plort market), plain .NET 8, no engine dependency |
 | `src/OpenRanch.Importer` | The `openranch-import` command |
 | `game/` | The Godot 4.7 project (C#) |
 | `tests/` | Unit tests, plus tests that run against your install when it is present |
