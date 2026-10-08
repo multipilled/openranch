@@ -27,9 +27,15 @@ Milestone 1, walking around The Ranch, is in progress:
 - Crunched textures (Unity's DXT1/DXT5 "crunch" format) are decoded by a C# port of crunch's
   decoder; everything else goes to the GPU as stored.
 - A first-person controller with a jetpack uses the original player's capsule size and slope limit.
-- `--collision-check` drops the player across the area's ground and checks it lands every time.
-- Landscape and painted-object shaders are first approximations; sky, fog, ambient light and the
-  sun come from the scene's own settings.
+- `--collision-check` drops the player across the area's ground and checks it lands every time (40 of 40).
+- Objects the game switches on and off at runtime follow the same rules: ranch upgrades by progress,
+  night-only decorations by the hour, gadget-site markers by gadget mode. `--save FILE` shows the
+  world as in one of your saves (read only).
+- Sky, fog, ambient light and the sun follow the original's zone settings and time of day, including
+  cave lighting. Fog is drawn with the original's formula in a full-screen pass.
+- Reference check: screenshots from 5 fixed spots (home deck, corrals, overgrowth, grotto, docks)
+  line up with the original game's view of the same spots. Colours still differ in places (ranch
+  palette recolouring, landscape detail textures, clouds).
 - Script data: every one of the game's 37,299 script components (758 script types, from slime
   diets to zone ambience) reads cleanly, with layouts worked out at runtime from the game's own
   assemblies through metadata. No game code is loaded or run. `openranch-import scripts --dump

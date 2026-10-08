@@ -9,12 +9,13 @@
 #
 # Usage:
 #   powershell -File tools/godot-capture.ps1 -Godot <Godot .NET exe> -Out shot.png `
-#       [-Camera "x,y,z,yaw,pitch"] [-Frames 90] [-TimeoutSeconds 180]
+#       [-Camera "x,y,z,yaw,pitch"] [-Save file.sav] [-Frames 90] [-TimeoutSeconds 180]
 # Camera values are in the original game's coordinates and degrees.
 param(
     [Parameter(Mandatory)] [string] $Godot,
     [Parameter(Mandatory)] [string] $Out,
     [string] $Camera = "",
+    [string] $Save = "",
     [int] $Frames = 90,
     [int] $TimeoutSeconds = 180,
     [int] $Width = 1280,
@@ -42,6 +43,7 @@ window/size/initial_position=Vector2i(-20000, -20000)
 try {
     $userArgs = "--scene ranch --screenshot `"$outFull`" --frames $Frames"
     if ($Camera) { $userArgs += " --camera $Camera" }
+    if ($Save) { $userArgs += " --save `"$([System.IO.Path]::GetFullPath($Save))`"" }
     $commandLine = "`"$Godot`" --path `"$game`" --log-file `"$log`" -- $userArgs"
 
     $startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ PriorityClass = [uint32]16384 }

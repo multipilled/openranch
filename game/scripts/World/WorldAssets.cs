@@ -263,6 +263,12 @@ public sealed class WorldAssets
         return result;
     }
 
+    private bool MainTextureHasAlpha(AssetRef owner, MaterialData mat) =>
+        mat.Texture("_MainTex") is { } slot
+        && _assets.Resolve(owner.File, slot.Texture) is { ClassId: UnityClassId.Texture2D } tex
+        && _assets.Read(tex, Texture2DData.Read).Format is TextureFormats.Dxt5 or TextureFormats.Dxt5Crunched
+            or TextureFormats.Rgba32 or TextureFormats.Argb32 or TextureFormats.Bgra32 or TextureFormats.Rgba4444 or TextureFormats.Bc7;
+
     private Texture2D? Slot(AssetRef owner, MaterialData mat, string name) =>
         mat.Texture(name) is { } slot ? Texture(_assets.Resolve(owner.File, slot.Texture)) : null;
 
@@ -337,7 +343,7 @@ public sealed class WorldAssets
             return m;
         }
 
-        var standard = new StandardMaterial3D { AlbedoColor = tint, Roughness = 0.85f, MetallicSpecular = 0.3f };
+        var standard = new StandardMaterial3D { AlbedoColor = tint, Roughness = 0.85f, MetallicSpecular = 0.3f, DiffuseMode = BaseMaterial3D.DiffuseModeEnum.Lambert };
         var main = Slot(owner, mat, "_MainTex") ?? Slot(owner, mat, "_Diffuse") ?? Slot(owner, mat, "_Albedo");
         if (main is not null)
         {
@@ -346,7 +352,14 @@ public sealed class WorldAssets
             standard.Uv1Scale = new Vector3(st.X, st.Y, 1);
             standard.Uv1Offset = new Vector3(st.Z, st.W, 0);
         }
-        if (mat.Keywords.Contains("_ALPHATEST_ON") || mat.Floats.ContainsKey("_Cutoff") && mat.Tags.GetValueOrDefault("RenderType") == "TransparentCutout")
+        // Grass and flower cards: a single texture whose alpha holds the blade shapes, seen from both sides.
+        if (mat.Textures.Count == 1 && mat.Textures[0].Name == "_MainTex" && MainTextureHasAlpha(owner, mat))
+        {
+            standard.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
+            standard.AlphaScissorThreshold = 0.5f;
+            standard.CullMode = BaseMaterial3D.CullModeEnum.Disabled;
+        }
+        else if (mat.Keywords.Contains("_ALPHATEST_ON") || mat.Floats.ContainsKey("_Cutoff") && mat.Tags.GetValueOrDefault("RenderType") == "TransparentCutout")
         {
             standard.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
             standard.AlphaScissorThreshold = mat.Float("_Cutoff", 0.5f);

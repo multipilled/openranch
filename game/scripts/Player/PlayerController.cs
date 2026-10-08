@@ -35,7 +35,8 @@ public partial class PlayerController : CharacterBody3D
         AddChild(new CollisionShape3D { Shape = shape, Position = new Vector3(0, height / 2, 0) });
         FloorMaxAngle = Mathf.DegToRad(slopeDegrees);
         FloorSnapLength = 0.5f;
-        Camera = new Camera3D { Position = new Vector3(0, eyeHeight, 0), Fov = 75, Current = true, Far = 2000 };
+        // The original's camera sits 0.1 m ahead of the body's centre (docs/behavior/player-camera.md).
+        Camera = new Camera3D { Position = new Vector3(0, eyeHeight, -0.1f), Fov = 75, Current = true, Far = 2000 };
         AddChild(Camera);
         Energy = MaxEnergy;
     }

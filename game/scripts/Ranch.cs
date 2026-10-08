@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Godot;
 using OpenRanch.Formats.Game;
+using OpenRanch.Formats.Saves;
 using OpenRanch.Formats.Scene;
 using OpenRanch.Formats.Unity;
 using OpenRanch.Game.Player;
@@ -17,6 +18,7 @@ namespace OpenRanch.Game;
 ///   --game DIR                      the Slime Rancher folder, if it isn't found automatically
 ///   --zone NAME                     which area to build (default zoneRANCH)
 ///   --camera x,y,z,yaw,pitch        start position and view in the original game's coordinates
+///   --save FILE                     show the world as in this save (ranch upgrades, time of day); read only
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 /// </summary>
@@ -44,10 +46,12 @@ public partial class Ranch : Node3D
         var assets = new AssetSet(install);
         var scene = assets.File("level3")!;
         var zoneName = Arg("--zone") ?? "zoneRANCH";
-        var zone = ZoneExtractor.Extract(assets, scene, zoneName);
+        var state = Arg("--save") is { } savePath ? WorldStateFromSave(savePath) : WorldState.NewGame;
+        var zone = ZoneExtractor.Extract(assets, scene, zoneName, state);
         var layers = PhysicsLayers.Read(assets);
         var rig = PlayerRig.Read(assets, scene);
         var lighting = SceneLighting.Read(assets, scene);
+        var ambience = ZoneAmbience.ReadAll(assets, install);
         var read = clock.ElapsedMilliseconds;
 
         var world = new WorldAssets(assets);
@@ -57,7 +61,8 @@ public partial class Ranch : Node3D
                  $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
                  $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
 
-        AddEnvironment(lighting);
+        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, state.Hour);
+        AddChild(worldLighting);
 
         var player = new PlayerController { Name = "Player" };
         AddChild(player);
@@ -79,56 +84,17 @@ public partial class Ranch : Node3D
             if (_screenshot is not null)
                 player.SetPhysicsProcess(false); // hold the exact view for the capture
         }
+        worldLighting.Attach(player.Camera);
     }
 
-    // Sky, fog, ambient light and sun use the original scene's starting values.
-    private void AddEnvironment(SceneLighting light)
+    // Reads the progress counters and the hour from a save. The file is only read.
+    private static WorldState WorldStateFromSave(string path)
     {
-        var horizon = UnityConvert.Color(light.HorizonColor ?? light.FogColor);
-        var top = UnityConvert.Color(light.SkyColor ?? new System.Numerics.Vector4(0.33f, 0.58f, 0.92f, 1));
-        var sky = new ProceduralSkyMaterial
-        {
-            SkyTopColor = top,
-            SkyHorizonColor = horizon,
-            GroundHorizonColor = horizon,
-            GroundBottomColor = top.Darkened(0.4f),
-            SunAngleMax = 20,
-        };
-        var env = new Godot.Environment
-        {
-            BackgroundMode = Godot.Environment.BGMode.Sky,
-            Sky = new Sky { SkyMaterial = sky },
-            AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = UnityConvert.Color(light.AmbientColor),
-            AmbientLightEnergy = light.AmbientIntensity,
-            TonemapMode = Godot.Environment.ToneMapper.Filmic,
-            FogEnabled = light.FogEnabled,
-            FogLightColor = UnityConvert.Color(light.FogColor) with { A = 1 },
-            SsaoEnabled = true,
-        };
-        if (light.FogMode == SceneLighting.FogLinear)
-        {
-            env.FogMode = Godot.Environment.FogModeEnum.Depth;
-            env.FogDepthBegin = light.FogStart;
-            env.FogDepthEnd = light.FogEnd;
-        }
-        else
-        {
-            // The game thins this per zone at runtime; until zone ambience is read, use a lighter fog.
-            env.FogDensity = light.FogDensity * 0.3f;
-        }
-        env.FogSkyAffect = 0;
-        AddChild(new WorldEnvironment { Environment = env });
-
-        var sun = UnityConvert.Transform(System.Numerics.Matrix4x4.CreateFromQuaternion(light.SunRotation));
-        AddChild(new DirectionalLight3D
-        {
-            Basis = sun.Basis,
-            LightColor = UnityConvert.Color(light.SunColor) with { A = 1 },
-            LightEnergy = light.SunIntensity,
-            ShadowEnabled = true,
-            DirectionalShadowMaxDistance = 250,
-        });
+        var game = SaveFile.Read(new System.IO.MemoryStream(System.IO.File.ReadAllBytes(path)));
+        var progress = game.Block("player").Map("progress")
+            .ToDictionary(kv => System.Convert.ToInt32(kv.Key), kv => System.Convert.ToInt32(kv.Value));
+        var hour = (float)(game.Block("world").Get<double>("worldTime") % 86400.0 / 3600.0);
+        return new WorldState(progress, hour);
     }
 
     private void ShowMessage(string text)

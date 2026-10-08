@@ -2,7 +2,7 @@
 // "topper" texture (grass, moss, sand) laid over surfaces that face upward.
 // First approximation for milestone 1; colour ramps and detail textures come later.
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode cull_back, diffuse_lambert, specular_schlick_ggx;
 
 uniform sampler2D primary_tex : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec4 primary_st = vec4(0.2, 0.2, 0.0, 0.0);

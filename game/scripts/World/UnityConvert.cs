@@ -24,4 +24,21 @@ public static class UnityConvert
 
     /// <summary>Unity colours are stored in sRGB; Godot colours given to source_color uniforms are too.</summary>
     public static Color Color(N.Vector4 c) => new(c.X, c.Y, c.Z, c.W);
+
+    /// <summary>
+    /// The original lights in gamma space: a lit surface shows albedo × (ambient + light), summed as
+    /// stored sRGB values. Godot sums light in linear space. This returns the light colour (sRGB, for
+    /// energy 1) that, added to the same ambient in Godot, gives the original's total on a surface
+    /// facing the light.
+    /// </summary>
+    public static Color GammaMatchedLight(N.Vector4 ambient, N.Vector4 light, float intensity)
+    {
+        float Channel(float a, float l)
+        {
+            var lit = new Color(a + l * intensity, 0, 0).SrgbToLinear().R;
+            var unlit = new Color(a, 0, 0).SrgbToLinear().R;
+            return new Color(Mathf.Max(lit - unlit, 0), 0, 0).LinearToSrgb().R;
+        }
+        return new Color(Channel(ambient.X, light.X), Channel(ambient.Y, light.Y), Channel(ambient.Z, light.Z));
+    }
 }

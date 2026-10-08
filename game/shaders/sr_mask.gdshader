@@ -2,7 +2,7 @@
 // paint-stroke texture blends between the two colours of each pair.
 // First approximation for milestone 1.
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode cull_back, diffuse_lambert, specular_schlick_ggx;
 
 uniform sampler2D color_mask : hint_default_black, filter_linear_mipmap, repeat_enable;
 uniform sampler2D ambient_occlusion : hint_default_white, filter_linear_mipmap, repeat_enable;

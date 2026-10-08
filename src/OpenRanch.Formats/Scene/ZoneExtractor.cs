@@ -23,12 +23,46 @@ public sealed record ColliderItem(string Path, Matrix4x4 World, ColliderData Col
 
 public sealed record ZoneStats(int Nodes, int SkippedInactive, int Renderers, int SkippedLowerLods, int Colliders, int Triggers);
 
-public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats);
+/// <summary>
+/// The game state that decides which optional objects show: per-type progress counters (ranch
+/// upgrades and so on, as stored in a save's player progress), the hour of the day, and gadget mode.
+/// </summary>
+public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Hour, bool GadgetMode = false)
+{
+    /// <summary>A new game at midday: no progress yet.</summary>
+    public static WorldState NewGame { get; } = new(new Dictionary<int, int>(), 12f);
+
+    public int ProgressOf(int type) => Progress.TryGetValue(type, out var v) ? v : 0;
+}
+
+public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats,
+    IReadOnlyList<CaveVolume> Caves);
+
+/// <summary>
+/// A trigger volume that switches the lighting to a cave zone's ambience while the player is inside
+/// (see docs/behavior/day-and-night.md). <see cref="LocalMin"/> and <see cref="LocalMax"/> bound the
+/// volume in the trigger's own space; <see cref="World"/> places it.
+/// </summary>
+public sealed record CaveVolume(string Path, Matrix4x4 World, ColliderShape Shape, Vector3 LocalMin, Vector3 LocalMax, float Radius,
+    int Zone, bool AffectsLighting)
+{
+    public bool Contains(Vector3 point)
+    {
+        if (!Matrix4x4.Invert(World, out var toLocal))
+            return false;
+        var p = Vector3.Transform(point, toLocal);
+        if (Shape == ColliderShape.Sphere)
+            return Vector3.Distance(p, (LocalMin + LocalMax) / 2) <= Radius;
+        return p.X >= LocalMin.X && p.Y >= LocalMin.Y && p.Z >= LocalMin.Z
+               && p.X <= LocalMax.X && p.Y <= LocalMax.Y && p.Z <= LocalMax.Z;
+    }
+}
 
 /// <summary>
 /// Walks one root object of a scene (for example "zoneRANCH" in the world scene) and lists what it
-/// draws and what it collides with. Inactive objects, lower levels of detail and objects that the game
-/// hides at runtime outside gadget mode (see docs/behavior/world-visibility.md) are left out.
+/// draws and what it collides with. Inactive objects, lower levels of detail and objects that the game's
+/// scripts switch off for the given <see cref="WorldState"/> (see docs/behavior/world-visibility.md)
+/// are left out.
 /// </summary>
 public static class ZoneExtractor
 {
@@ -48,14 +82,16 @@ public static class ZoneExtractor
         return roots;
     }
 
-    public static ZoneExtract Extract(AssetSet assets, SerializedFile scene, string rootName)
+    public static ZoneExtract Extract(AssetSet assets, SerializedFile scene, string rootName, WorldState? state = null)
     {
+        state ??= WorldState.NewGame;
         var roots = RootObjects(assets, scene);
         if (!roots.TryGetValue(rootName, out var root))
             throw new KeyNotFoundException($"No root object named '{rootName}' in {Path.GetFileName(scene.Path)}.");
 
         var renderers = new List<RenderItem>();
         var colliders = new List<ColliderItem>();
+        var caves = new List<CaveVolume>();
         var lowerLods = new HashSet<long>();
         var hiddenObjects = new HashSet<long>();
         int nodes = 0, inactive = 0, triggers = 0;
@@ -78,8 +114,7 @@ public static class ZoneExtractor
                                 lowerLods.Add(r.PathId);
                         break;
                     case { ClassId: UnityClassId.MonoBehaviour } script:
-                        if (HiddenOutsideGadgetMode(assets, script) is { } hidden)
-                            hiddenObjects.Add(hidden);
+                        HideBy(assets, script, t.GameObject, state, hiddenObjects);
                         break;
                 }
             }
@@ -106,9 +141,14 @@ public static class ZoneExtractor
             var path = parentPath.Length == 0 ? go.Name : parentPath + "/" + go.Name;
 
             MeshFilterData? filter = null;
+            (int Zone, bool AffectsLighting)? cave = null;
             foreach (var c in go.Components)
+            {
                 if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MeshFilter } f)
                     filter = assets.Read(f, MeshFilterData.Read);
+                else if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MonoBehaviour } script)
+                    cave ??= CaveSettings(assets, script);
+            }
 
             foreach (var c in go.Components)
             {
@@ -138,6 +178,8 @@ public static class ZoneExtractor
                         if (col.IsTrigger)
                         {
                             triggers++;
+                            if (cave is { } cs && CaveBounds(assets, scene, col) is { } bounds)
+                                caves.Add(new CaveVolume(path, world, col.Shape, bounds.Min, bounds.Max, col.Radius, cs.Zone, cs.AffectsLighting));
                             continue;
                         }
                         var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
@@ -156,23 +198,104 @@ public static class ZoneExtractor
         Walk(root, Matrix4x4.Identity, "");
 
         return new ZoneExtract(rootName, renderers, colliders,
-            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers));
+            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves);
+    }
+
+    /// <summary>Reads a cave trigger script's zone and lighting flag, if this component is one.</summary>
+    private static (int Zone, bool AffectsLighting)? CaveSettings(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        var (_, enabled, script, _) = Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        if (!enabled || assets.Resolve(behaviour.File, script) is not { } scriptRef
+            || assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName != "CaveTrigger")
+            return null;
+        var lights = r.ReadInt32();
+        r.Skip(lights * 12); // cave light references
+        var affectsLighting = r.ReadBool();
+        r.Align();
+        return (r.ReadInt32(), affectsLighting);
+    }
+
+    // A trigger collider's extent in its own space: exact for boxes and spheres, the bounding box of
+    // the capsule or mesh otherwise.
+    private static (Vector3 Min, Vector3 Max)? CaveBounds(AssetSet assets, SerializedFile scene, ColliderData col)
+    {
+        switch (col.Shape)
+        {
+            case ColliderShape.Box:
+                return (col.Center - col.Size / 2, col.Center + col.Size / 2);
+            case ColliderShape.Sphere:
+                return (col.Center - new Vector3(col.Radius), col.Center + new Vector3(col.Radius));
+            case ColliderShape.Capsule:
+            {
+                var half = new Vector3(col.Radius);
+                var axis = col.Direction switch { 0 => Vector3.UnitX, 2 => Vector3.UnitZ, _ => Vector3.UnitY };
+                half += axis * MathF.Max(0, col.Height / 2 - col.Radius);
+                return (col.Center - half, col.Center + half);
+            }
+            case ColliderShape.Mesh when assets.Resolve(scene, col.Mesh) is { } meshRef:
+            {
+                var mesh = assets.Read(meshRef, MeshData.Read);
+                return (mesh.BoundsCenter - mesh.BoundsExtent, mesh.BoundsCenter + mesh.BoundsExtent);
+            }
+            default:
+                return null;
+        }
     }
 
     /// <summary>
-    /// Gadget build sites carry a script that keeps their markers switched off unless the player is in
-    /// gadget mode. Returns the object it hides when not in gadget mode, if this component is one.
+    /// Applies the scripts that switch world objects on and off, as they would be when the game starts
+    /// in <paramref name="state"/>. Each hidden object's id is added to <paramref name="hidden"/>.
     /// </summary>
-    private static long? HiddenOutsideGadgetMode(AssetSet assets, AssetRef behaviour)
+    private static void HideBy(AssetSet assets, AssetRef behaviour, PPtr owner, WorldState state, HashSet<long> hidden)
     {
         var r = assets.Reader(behaviour);
         var (_, enabled, script, _) = Unity.Managed.MonoBehaviourReader.ReadHeader(r);
         if (!enabled || assets.Resolve(behaviour.File, script) is not { } scriptRef)
-            return null;
-        if (assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName != "DeactivateBasedOnGadgetMode")
-            return null;
-        var target = PPtr.Read(r);
-        var showOnlyOutsideGadgetMode = r.ReadBool();
-        return !showOnlyOutsideGadgetMode && target.FileId == 0 && !target.IsNull ? target.PathId : null;
+            return;
+        void Hide(PPtr target)
+        {
+            if (target.FileId == 0 && !target.IsNull)
+                hidden.Add(target.PathId);
+        }
+        switch (assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName)
+        {
+            // Build-site markers: the target shows only in gadget mode, or only outside it with the flag set.
+            case "DeactivateBasedOnGadgetMode":
+            {
+                var target = PPtr.Read(r);
+                var activeOutsideGadgetMode = r.ReadBool();
+                if (state.GadgetMode == activeOutsideGadgetMode)
+                    Hide(target);
+                break;
+            }
+            // Ranch upgrades and similar: the object itself shows only while a progress counter is in range.
+            case "ActivateOnProgressRange":
+            {
+                var type = r.ReadInt32();
+                var min = r.ReadInt32();
+                var max = r.ReadInt32();
+                var progress = state.ProgressOf(type);
+                if (progress < min || progress > max)
+                    Hide(owner);
+                break;
+            }
+            // Lamps and night decorations: the listed objects show only between two hours, wrapping past midnight.
+            case "EnableOnlyDuringTimeWindow":
+            {
+                var start = r.ReadSingle();
+                var end = r.ReadSingle();
+                var count = r.ReadInt32();
+                var h = state.Hour;
+                var active = start <= h && h <= end || start > end && (h >= start || h <= end);
+                for (var i = 0; i < count; i++)
+                {
+                    var target = PPtr.Read(r);
+                    if (!active)
+                        Hide(target);
+                }
+                break;
+            }
+        }
     }
 }
