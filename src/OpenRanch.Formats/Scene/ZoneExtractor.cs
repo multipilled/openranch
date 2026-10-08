@@ -27,7 +27,8 @@ public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderer
 
 /// <summary>
 /// Walks one root object of a scene (for example "zoneRANCH" in the world scene) and lists what it
-/// draws and what it collides with. Inactive objects and lower levels of detail are left out.
+/// draws and what it collides with. Inactive objects, lower levels of detail and objects that the game
+/// hides at runtime outside gadget mode (see docs/behavior/world-visibility.md) are left out.
 /// </summary>
 public static class ZoneExtractor
 {
@@ -56,9 +57,10 @@ public static class ZoneExtractor
         var renderers = new List<RenderItem>();
         var colliders = new List<ColliderItem>();
         var lowerLods = new HashSet<long>();
+        var hiddenObjects = new HashSet<long>();
         int nodes = 0, inactive = 0, triggers = 0;
 
-        // First pass: renderers that only show at lower levels of detail.
+        // First pass: renderers that only show at lower levels of detail, and objects hidden at runtime.
         void CollectLods(AssetRef transformRef)
         {
             var t = assets.Read(transformRef, TransformData.Read);
@@ -67,12 +69,18 @@ public static class ZoneExtractor
                 return;
             foreach (var c in go.Components)
             {
-                if (assets.Resolve(scene, c) is { ClassId: UnityClassId.LodGroup } lodRef)
+                switch (assets.Resolve(scene, c))
                 {
-                    var lod = assets.Read(lodRef, LodGroupData.Read);
-                    foreach (var level in lod.Lods.Skip(1))
-                        foreach (var r in level.Renderers)
-                            lowerLods.Add(r.PathId);
+                    case { ClassId: UnityClassId.LodGroup } lodRef:
+                        var lod = assets.Read(lodRef, LodGroupData.Read);
+                        foreach (var level in lod.Lods.Skip(1))
+                            foreach (var r in level.Renderers)
+                                lowerLods.Add(r.PathId);
+                        break;
+                    case { ClassId: UnityClassId.MonoBehaviour } script:
+                        if (HiddenOutsideGadgetMode(assets, script) is { } hidden)
+                            hiddenObjects.Add(hidden);
+                        break;
                 }
             }
             foreach (var child in t.Children)
@@ -88,7 +96,7 @@ public static class ZoneExtractor
             if (go is null)
                 return;
             nodes++;
-            if (!go.IsActive)
+            if (!go.IsActive || t.GameObject.FileId == 0 && hiddenObjects.Contains(t.GameObject.PathId))
             {
                 inactive++;
                 return;
@@ -149,5 +157,22 @@ public static class ZoneExtractor
 
         return new ZoneExtract(rootName, renderers, colliders,
             new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers));
+    }
+
+    /// <summary>
+    /// Gadget build sites carry a script that keeps their markers switched off unless the player is in
+    /// gadget mode. Returns the object it hides when not in gadget mode, if this component is one.
+    /// </summary>
+    private static long? HiddenOutsideGadgetMode(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        var (_, enabled, script, _) = Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        if (!enabled || assets.Resolve(behaviour.File, script) is not { } scriptRef)
+            return null;
+        if (assets.Read(scriptRef, Unity.Managed.MonoBehaviourReader.ReadMonoScript).ClassName != "DeactivateBasedOnGadgetMode")
+            return null;
+        var target = PPtr.Read(r);
+        var showOnlyOutsideGadgetMode = r.ReadBool();
+        return !showOnlyOutsideGadgetMode && target.FileId == 0 && !target.IsNull ? target.PathId : null;
     }
 }
