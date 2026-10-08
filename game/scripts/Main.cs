@@ -7,17 +7,30 @@ using OpenRanch.Formats.Saves;
 namespace OpenRanch.Game;
 
 /// <summary>
-/// Start screen for now: shows whether Slime Rancher was found and which ranches can be opened.
-/// The Ranch itself arrives with milestone 1.
+/// Start screen: shows whether Slime Rancher was found and which ranches can be opened, and
+/// leads into The Ranch.
 /// </summary>
 public partial class Main : Control
 {
+    private const string RanchScene = "res://scenes/ranch.tscn";
+
     public override void _Ready()
     {
+        // "-- --scene ranch" skips this screen, for scripted runs.
+        var args = OS.GetCmdlineUserArgs();
+        if (System.Array.IndexOf(args, "--scene") is var i and >= 0 && i + 1 < args.Length && args[i + 1] == "ranch")
+        {
+            CallDeferred(MethodName.OpenRanch);
+            return;
+        }
+
         var status = Describe();
         GetNode<Label>("%Status").Text = status;
         GD.Print(status);
+        GetNode<Button>("%WalkRanch").Pressed += OpenRanch;
     }
+
+    private void OpenRanch() => GetTree().ChangeSceneToFile(RanchScene);
 
     private static string Describe()
     {

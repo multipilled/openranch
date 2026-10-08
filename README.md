@@ -20,7 +20,16 @@ Milestone 0, the foundation, is done:
   byte for byte. Saves from before game 1.4 (versions 8 and 9) are listed but not read yet.
 - The Godot project starts and lists the ranches it found.
 
-Next is milestone 1: walking around The Ranch with its real geometry, textures and collision.
+Milestone 1, walking around The Ranch, is in progress:
+
+- The world scene is read straight from your install: The Ranch's 7,241 objects become 4,636
+  rendered instances (static batches, multimeshes) and 2,291 collision shapes in about 2 seconds.
+- Crunched textures (Unity's DXT1/DXT5 "crunch" format) are decoded by a C# port of crunch's
+  decoder; everything else goes to the GPU as stored.
+- A first-person controller with a jetpack uses the original player's capsule size and slope limit.
+- `--collision-check` drops the player across the area's ground and checks it lands every time.
+- Landscape and painted-object shaders are first approximations.
+
 The full plan, with milestones M0 to M5, is in the project's rewrite plan document.
 
 ## Layout
@@ -32,7 +41,7 @@ The full plan, with milestones M0 to M5, is in the project's rewrite plan docume
 | `game/` | The Godot 4.7 project (C#) |
 | `tests/` | Unit tests, plus tests that run against your install when it is present |
 | `docs/` | Format notes and clean-room behavior notes, written in our own words |
-| `tools/` | The commit guard and helper scripts |
+| `tools/` | The commit guard, low-priority runner, and off-screen capture and headless check scripts |
 
 ## Building
 
@@ -44,6 +53,15 @@ dotnet test OpenRanch.sln
 dotnet run --project src/OpenRanch.Importer -- inventory
 dotnet run --project src/OpenRanch.Importer -- saves --verify
 ```
+
+Run the game from the Godot editor (open `game/project.godot`), or from the command line:
+
+```sh
+godot --path game -- --scene ranch
+```
+
+Scripted runs never take focus: `tools/godot-capture.ps1` renders a screenshot in an off-screen
+window, and `tools/godot-headless.ps1` runs checks such as `--collision-check` with no window.
 
 The game is found through the `OPENRANCH_GAME_DIR` environment variable or your Steam libraries.
 On a shared PC, `tools/run-low.ps1` runs any of these at below-normal CPU priority, for example
@@ -67,3 +85,9 @@ never copied into this repository.
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
+
+## Third-party code
+
+`src/OpenRanch.Formats/Unity/Crunch.cs` is an altered version of the crunch texture decoder
+(Copyright (c) 2010-2016 Richard Geldreich, Jr. and Binomial LLC), translated to C#. It keeps the
+original ZLIB license notice at the top of the file.

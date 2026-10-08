@@ -2,4 +2,4 @@
 # Blocks commits that include game data or decompiled code. Enable with:
 #   git config core.hooksPath .githooks
 if command -v python3 >/dev/null 2>&1; then PY=python3; else PY=python; fi
-exec "$PY" tools/check_no_game_files.py --staged
+exec "$PY" -B tools/check_no_game_files.py --staged
