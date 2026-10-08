@@ -282,7 +282,8 @@ public sealed class WorldAssets
                 Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
                 BlendMode = BaseMaterial3D.BlendModeEnum.Add,
                 CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-                AlbedoColor = tint with { A = 1 },
+                // Force fields (they also carry a colour ramp and mask) are faint in the original.
+                AlbedoColor = (HasSlot("_ColorRamp") ? tint * 0.2f : tint) with { A = 1 },
                 AlbedoTexture = Slot(owner, mat, "_Stripes"),
                 DisableFog = true,
             };
