@@ -9,10 +9,12 @@ public enum WanderMood
 }
 
 /// <summary>
-/// The choices and numbers behind how a slime moves by itself: when it bothers going for food, how
-/// hard it jumps, and how it wanders. The rules are in docs/behavior/slimes.md, "In the world: moving
-/// and finding food". Tuning that lives on the slime's prefab (search radius, jump strength, speed)
-/// is passed in; these constants are the ones that live only in the game's code.
+/// The choices and numbers behind how a slime moves and eats by itself: when it bothers going for
+/// food, how hard it jumps, how it wanders and how its products come out. The rules are in
+/// docs/behavior/slimes.md, "In the world". Tuning that lives on the slime's prefab (search radius,
+/// jump strength, speed) is passed in; these constants live only in the game's code and come from
+/// static analysis of its slime behaviours (SlimeSubbehaviourPlexer, SlimeRandomMove, GotoConsumable,
+/// FindConsumable, SlimeEat).
 /// </summary>
 public static class SlimeMotion
 {
@@ -48,8 +50,22 @@ public static class SlimeMotion
     public const float PulseRollForce = 270f;
     /// <summary>Giving up on food that can't be reached raises agitation by this much.</summary>
     public const float AgitationPerGiveUp = 0.1f;
-    /// <summary>The jump strength for going after food when the prefab doesn't set one (the original's default).</summary>
+    /// <summary>The jump strength for going after food when the prefab doesn't set one (GotoConsumable's default).</summary>
     public const float DefaultFoodJump = 12f;
+    /// <summary>How long a slime tries to reach food, when the prefab doesn't say (GotoConsumable's default).</summary>
+    public const float DefaultAttemptSeconds = 10f;
+    /// <summary>How long a slime ignores food after giving up, when the prefab doesn't say (GotoConsumable's default).</summary>
+    public const float DefaultGiveUpSeconds = 10f;
+    /// <summary>A bite started by touching food takes this long; then the food is gone.</summary>
+    public const float BiteSeconds = 0.25f;
+    /// <summary>Products appear this far above the slime's centre, along its own up direction.</summary>
+    public const float ProduceHeight = 0.5f;
+    /// <summary>Products start moving up at this speed, in m/s.</summary>
+    public const float ProduceSpeed = 1f;
+    /// <summary>Products grow from this fraction of their size...</summary>
+    public const float ProduceStartScale = 0.01f;
+    /// <summary>...to full size over this long.</summary>
+    public const float ProduceGrowSeconds = 0.5f;
     /// <summary>Jumps toward food are at least this fraction of the prefab's jump strength.</summary>
     public const float MinFoodJumpFraction = 0.4f;
 

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\OpenRanch.Formats\OpenRanch.Formats.csproj" />
+    <ProjectReference Include="..\src\OpenRanch.Simulation\OpenRanch.Simulation.csproj" />
   </ItemGroup>
 
 </Project>

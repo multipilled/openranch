@@ -21,6 +21,7 @@ namespace OpenRanch.Game;
 ///   --save FILE                     show the world as in this save (ranch upgrades, time of day); read only
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
+///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
 /// </summary>
 public partial class Ranch : Node3D
 {
@@ -85,6 +86,10 @@ public partial class Ranch : Node3D
                 player.SetPhysicsProcess(false); // hold the exact view for the capture
         }
         worldLighting.Attach(player.Camera);
+
+        // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
+        if (Slimes.M2World.Create(install, zone, layers, player, state.Hour, args) is { } m2)
+            AddChild(m2);
     }
 
     // Reads the progress counters and the hour from a save. The file is only read.
