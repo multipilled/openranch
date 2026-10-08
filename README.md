@@ -41,7 +41,11 @@ Milestone 1, walking around The Ranch, is in progress:
   assemblies through metadata. No game code is loaded or run. `openranch-import scripts --dump
   SlimeDefinition` shows an example.
 
-Milestone 2, vacpack and slimes, has its rules in place, headless:
+Milestone 2, vacpack and slimes, works in The Ranch: Pink, Tabby and Rock slimes (built from the
+game's own item templates) hop, eat and make plorts; the vacpack has 4 slots to suck up and shoot
+items; corral walls keep slimes in; the plort market buys plorts at the price read from your copy.
+`--m2-check` runs it headless: a Pink slime eats a carrot, its plort is vacuumed up and sold, and a
+Rock slime thrown at the corral wall stays in. The rules underneath, headless:
 
 - `src/OpenRanch.Simulation` holds slime hunger and eating, the 4-slot vacpack and the plort market
   with saturation, as plain .NET. Diets, favorites, plorts, eating tuning and market prices are read
