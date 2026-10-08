@@ -100,6 +100,90 @@ Hunger and agitation are numbers from 0 to 1.
 Checked: counts read from the data (the install test feeds Tabby and Rock slimes their favorites
 and gets `FavoriteProductionCount` plorts). Not yet compared against a recording.
 
+## Game time
+
+Hunger drifts per game hour. The `TimeDirector` component (in `level2`, beside the other directors) sets how many real seconds a
+game day lasts (`secsPerGameDay`; 24 real minutes in the release we read), so one real second is
+24 ÷ `secsPerGameDay` game hours. Read from the game's data.
+
+## In the world: the body
+
+- A slime is a ball that rolls and bounces under physics. Its prefab (the game object the game's
+  item lookup list gives for the slime's id) carries the body's collider (a sphere), mass, drag and
+  angular drag. A component keeps it upright: it turns only around the vertical axis.
+- What the slime looks like is not stored on the prefab itself. The slime definition names its
+  default appearance (`AppearancesDefault`), which lists parts (`Structures`); each part names a set
+  of model objects, one per level of detail (`Element.Prefabs`, each with a `LODIndex`), the bone of
+  the slime's skeleton it hangs from (`ParentBone`, or the prefab's appearance root when none) and
+  the materials to draw it with (`DefaultMaterials`, unless the part overrides them). Parts that
+  support faces draw the face's eyes and mouth as extra layers on the same model. The default face
+  expression is "happy". See `docs/formats/prefabs.md`.
+
+Checked: read from the game's data with openranch's prefab reader.
+
+## In the world: moving and finding food
+
+Studied on a developer's PC from how the original works; tuning values named here are read from the
+slime prefab's components.
+
+- A slime decides what to do about once a second, choosing the activity that matters most right now.
+  It does nothing for its first three seconds in the world, and it only pushes itself around while it
+  stands on something (checked with a short look straight down, a little longer than half its height,
+  four times a second).
+- **Wandering** always matters a little (0.2). Every ten seconds it picks one of three moods, resting
+  (one time in five), scooting (three in ten) or hopping (half the time), and a heading within about
+  30 degrees (half a radian) either side of where it faces. While hopping it jumps at most once a
+  second, and only when it is moving slower than 5 m/s: an upward kick of between half and all of a
+  jump strength of 6 (times its mass, times the prefab's `SlimeRandomMove.verticalFactor`) and a
+  random sideways kick of up to half that strength in each direction. While scooting it turns toward
+  its heading and slides forward in pulses, once a second.
+- **Going for food** matters when there is something it wants within reach. The prefab's
+  `GotoConsumable` component sets the search radius (`maxSearchRad`), the jump strength
+  (`maxJump`), turning (`facingSpeed`, `facingStability`), speed (`pursuitSpeedFactor`) and patience
+  (`attemptTime`, `giveUpTime`). Among the items in its diet within the search radius, it goes for the
+  one with the best ratio of drive (its hunger, for ordinary food) to squared distance. Food seeking
+  matters as much as the drive squared times 0.95, so it beats wandering once hunger is above about
+  0.46.
+- While going for food it turns toward the target. When something stands in the way it jumps toward
+  the target, at most once a second, with a strength that grows with hunger: 40% of `maxJump` up to
+  the hungry cutoff (0.666), rising to the full `maxJump` at hunger 1, with the square of how far
+  hunger has got from the cutoff toward 1. The jump aims upward and toward the target: the direction
+  is straight up plus the direction to the target scaled by the distance over 30 m (at most 1). The
+  kick is the strength times the slime's mass. Otherwise it slides toward the target: within 3 m with
+  a steady push of 480 × mass × `pursuitSpeedFactor` (per second), farther out in pulses (150 × mass
+  × `pursuitSpeedFactor` times a pulse that swings between 0 and 2 once a second, plus a push of 270 ×
+  mass × pulse at the bottom of the body that rolls it forward).
+- If it hasn't reached the food after `attemptTime` seconds it gives up: its agitation rises by 0.1
+  and it ignores food for `giveUpTime` seconds.
+- Tabbies don't have `GotoConsumable`; they stalk their food (`StalkConsumable`: creep up, wait, then
+  pounce from about 8 m). Its food seeking matters as much as the drive squared.
+
+The numbers without a field name are in the game's code, not its data (named constants in
+`src/OpenRanch.Simulation/SlimeMotion.cs`).
+
+openranch for now: a wandering slime rests or hops (scooting is left out); a slime going for food
+slides toward it and jumps when something is in the way, as above. Tabbies go for food the plain
+way, with the search radius from their `StalkConsumable` and, as it sets no jump strength, the
+original's default for `GotoConsumable` (12). Stalking and pouncing are left for later.
+
+## In the world: eating
+
+Studied on a developer's PC from how the original works.
+
+- When something touches a slime, the slime eats it if it is in its diet and the slime is hungry
+  enough (the rule in "Deciding to eat"). It turns to face the food and bites; a bite started by
+  touch takes a quarter of a second, then the food is gone and the meal counts.
+- Two seconds after the bite (`Slime.DigestSeconds`) the products pop out half a metre above the
+  slime's centre, in its own up direction, moving up at 1 m/s and growing from almost nothing to full
+  size over half a second.
+- A slime is busy while biting and can't start another bite until it's done.
+
+## Plorts in the world
+
+Plorts are small physics items, with their own prefab (collider, mass, drag). The prefab's
+`DestroyPlortAfterTime.lifeTimeHours` says how many game hours a plort lasts before it vanishes.
+openranch reads it but doesn't remove old plorts yet.
+
 ## Not modelled yet
 
 - **Largos**: a slime that can become a largo (`CanLargofy`) also eats other slimes' plorts, which

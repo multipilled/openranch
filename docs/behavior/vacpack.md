@@ -49,6 +49,41 @@ they are not modelled yet.
   slots; cycling wraps around.
 - Shooting takes one item from the selected slot.
 
+## In the world: sucking things up
+
+The player's `WeaponVacuum` component (on the player rig in the world scene) holds the tuning:
+`maxVacDist`, `captureDist`, `minJointSpeed` and `maxJointSpeed`, `ejectSpeed` and `shootCooldown`.
+The suction zone is the rig's "vac shape" object, a child of the first-person camera: a row of
+trigger capsules that widen with distance, together a cone pointing where the player looks. Read
+from the game's data.
+
+Studied on a developer's PC from how the original works:
+
+- While the vac button is held, every item in the cone that can be vacuumed, and that the nozzle can
+  see (nothing solid between them, within `maxVacDist`), is caught: it stops falling and is reeled
+  toward the nozzle. The reel moves at `maxJointSpeed` when the item is close and slows to
+  `minJointSpeed` at `maxVacDist`, so far items come in slower.
+- Once a caught item is within `captureDist` of the nozzle, it shrinks into the nozzle over 0.2
+  seconds and joins the vacpack (the slot rules above). If the vacpack has no room for it, it is let
+  go again and grows back.
+- Letting go of the vac button releases everything still being reeled in.
+- Items carry a size: ordinary items go into the vacpack; large ones (largos, for example) are held
+  in front of the nozzle instead. openranch doesn't hold large items yet.
+
+## In the world: shooting
+
+- While the shoot button is held, the vacpack shoots one item from the selected slot every
+  `shootCooldown` seconds, the first one at once.
+- A shot item appears just in front of the nozzle (pushed a little further out when shooting
+  downward) and flies along the view at `ejectSpeed`, plus the player's own velocity. It grows from a
+  fifth of its size to full size in a tenth of a second.
+- A shot item is "launched" until it first touches something solid other than the player. While
+  launched it passes through corral walls (see `corrals.md`), so slimes can be shot into a corral.
+- Shooting from an empty slot does nothing (the original plays an empty click).
+
+The keys are openranch's own: hold the right mouse button to vacuum, hold the left button to shoot,
+1 to 4 pick a slot and the mouse wheel cycles slots.
+
 ## Not modelled yet
 
 - Slimes in the vacpack keep their averaged mood (hunger, agitation) and get it back when shot out.
