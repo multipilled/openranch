@@ -15,7 +15,7 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 ## Rules
 
 1. Heavy jobs (builds, tests, Godot runs, big scans) go through `tools/with_cpu.sh <you> ...`: machine-wide
-   slots (2 by default) shared with every session of every project on this PC, at below-normal priority.
+   slots (3 by default) shared with every session of every project on this PC, at below-normal priority.
    Anything that runs Godot also goes through `tools/with_lock.sh <you> ...` (one Godot run at a time
    across all openranch worktrees). In bash, use dash-style MSBuild switches so they aren't mangled:
    `tools/with_cpu.sh <you> dotnet build OpenRanch.sln -m:2 -nodeReuse:false -p:UseSharedCompilation=false`.
