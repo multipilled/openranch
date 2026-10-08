@@ -57,6 +57,18 @@ from yesterday's rounded price.
 - In game modes with a fixed market, there is no daily change and no shutdown: every plort pays
   1.5 × its base price forever (code-only; `PlortMarket.FixedPriceFactor`).
 
+## The market at the ranch
+
+The market stand near the ranch house (`techMarket` in the world scene) has a deposit hole: a trigger
+sphere (`triggerDeposit`) with the `ScorePlort` component. Read from the game's data.
+
+Studied on a developer's PC from how the original works:
+
+- Anything that enters the hole is offered to the market. If the market buys that item (and isn't
+  in its midnight shutdown), it pays today's price per item, the sale counts toward saturation, and
+  the item disappears in a little burst. Anything else is left alone and falls back out.
+- The money goes to the player's coins (newbucks), shown on the HUD.
+
 ## Not modelled yet
 
 - After the Mochi story progress, each sale has a small chance to pay double in a different
