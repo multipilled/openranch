@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The state of one ranch game (money, plots, slimes, Slimepedia, mail, the clock), its rules, and
+       openranch's own save format, as plain .NET with no engine dependency. Imports the original's
+       version 12 saves through OpenRanch.Formats. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>OpenRanch.Ranch</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenRanch.Formats\OpenRanch.Formats.csproj" />
+    <ProjectReference Include="..\OpenRanch.Simulation\OpenRanch.Simulation.csproj" />
+  </ItemGroup>
+
+</Project>
