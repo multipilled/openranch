@@ -65,7 +65,9 @@ public static class ZoneBuilder
                 continue;
             var shadow = castShadows ? GeometryInstance3D.ShadowCastingSetting.On : GeometryInstance3D.ShadowCastingSetting.Off;
             var items = group.ToList();
-            if (items.Count == 1)
+            // Mirrored meshes have reversed winding baked in, so they always go through a multimesh,
+            // where Godot does not flip culling for the mirrored transform a second time.
+            if (items.Count == 1 && !mirrored)
             {
                 visuals.AddChild(new MeshInstance3D { Mesh = mesh, Transform = UnityConvert.Transform(items[0].World), CastShadow = shadow });
                 meshInstances++;

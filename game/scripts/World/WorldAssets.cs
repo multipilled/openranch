@@ -35,8 +35,10 @@ public sealed class WorldAssets
 
     /// <summary>
     /// Builds a mesh with one surface per material. Each surface gathers the given sub-meshes, copying
-    /// only the vertices they use. <paramref name="mirrored"/> keeps Unity's winding for instances
-    /// whose transform already mirrors them.
+    /// only the vertices they use. Unity and Godot both treat clockwise triangles as front faces, and
+    /// mirroring Z already turns Unity's clockwise into Godot's clockwise, so the order is kept.
+    /// <paramref name="mirrored"/> reverses it for multimesh instances whose transform mirrors them
+    /// (a multimesh can't flip culling per instance).
     /// </summary>
     public ArrayMesh BuildMesh(AssetRef meshRef, IEnumerable<(int SubMesh, AssetRef? Material)> parts, bool mirrored)
     {
@@ -124,13 +126,13 @@ public sealed class WorldAssets
                 indices.Add(tri[i] + shift);
                 if (mirrored)
                 {
-                    indices.Add(tri[i + 1] + shift);
                     indices.Add(tri[i + 2] + shift);
+                    indices.Add(tri[i + 1] + shift);
                 }
                 else
                 {
-                    indices.Add(tri[i + 2] + shift);
                     indices.Add(tri[i + 1] + shift);
+                    indices.Add(tri[i + 2] + shift);
                 }
             }
         }

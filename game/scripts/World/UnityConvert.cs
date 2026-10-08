@@ -5,8 +5,8 @@ namespace OpenRanch.Game.World;
 
 /// <summary>
 /// Unity is left-handed and Godot right-handed, both Y up. Mirroring Z converts between them:
-/// positions and directions get z negated, triangle winding is reversed, and transforms are
-/// conjugated by the mirror.
+/// positions and directions get z negated and transforms are conjugated by the mirror. Triangle
+/// order stays as stored: both engines treat clockwise as the front, and the mirror keeps it so.
 /// </summary>
 public static class UnityConvert
 {
