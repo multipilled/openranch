@@ -201,8 +201,9 @@ public partial class RanchMachines : Node
                 food.ApplyCentralImpulse(push * food.Mass * _economy.M2.Catalog.FixedTimestep);
                 Log.Add((id, "fed", name, now));
             }
+            // Only a drop waits half a second; with the store empty the queue runs down a drop a frame (SlimeFeeder.ProcessFeedOperation).
+            _nextEject[id] = real + FeederRules.EjectSeconds;
         }
-        _nextEject[id] = real + FeederRules.EjectSeconds;
         plot.Feeder = plot.Feeder with { PendingCount = Math.Max(0, plot.Feeder.PendingCount - 1) };
     }
 
