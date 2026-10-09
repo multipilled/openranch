@@ -130,7 +130,7 @@ public sealed class MachinesCheck(M6Check check, Economy economy)
         var thrown = catchers.Count > 0 && await Throw(site, catchers[0].Trigger, "CARROT_VEGGIE");
         var store = catchers.FirstOrDefault()?.Store;
         var slots = store is null ? null : site.Placed.Plot.Silo.GetValueOrDefault(store.Kind);
-        check.Check(thrown && slots?[catchers[0].Slot].Count == 1,
+        check.Check(thrown && slots?[catchers[0].SlotFor(site.Placed.Plot.SiloSlotSelections)].Count == 1,
             $"a silo on {site.Info.Id} ({catchers.Count} catchers on, {string.Join(", ", Machines.Data.Stores[site.Placed.Plot.Type].Select(s => $"{s.KindName} {s.Slots}x{s.MaxPerSlot}"))}) " +
             $"took a carrot into slot {catchers.FirstOrDefault()?.Slot}");
         if (!thrown)
@@ -152,8 +152,8 @@ public sealed class MachinesCheck(M6Check check, Economy economy)
         await check.Seconds(1);
         tool.VacHeld = false;
         tool.ScriptControlled = false;
-        check.Check(gave && slots![catcher.Slot].Count == 0,
-            $"the vacpack pulling at the silo's front (aimed {aimed}) got the carrot back out; slot {catcher.Slot} holds {slots?[catcher.Slot].Count}");
+        check.Check(gave && slots![catcher.SlotFor(site.Placed.Plot.SiloSlotSelections)].Count == 0,
+            $"the vacpack pulling at the silo's front (aimed {aimed}) got the carrot back out; slot {catcher.Slot} holds {slots?[catcher.SlotFor(site.Placed.Plot.SiloSlotSelections)].Count}");
     }
 
     private async Task Incinerator(string? avoid)

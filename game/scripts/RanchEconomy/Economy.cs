@@ -53,14 +53,24 @@ public partial class Economy : Node3D
         AddChild(DoorMenu);
         AddChild(Interactor);
         // Produce, crops, hens and chicks on the world clock; the save writer writes their clocks.
-        Produce = new RanchProduce(this);
-        AddChild(Produce);
-        writer.Timers = Produce.TimersOf;
-        writer.Unsaved = Produce.Unsaved;
-        writer.Crops = Produce.CropClocks;
-        // Silos, feeders, plort collectors and the incinerator (RanchMachines.cs).
-        Machines = new RanchMachines(this);
-        AddChild(Machines);
+        try
+        {
+            Produce = new RanchProduce(this);
+            AddChild(Produce);
+            writer.Timers = Produce.TimersOf;
+            writer.Unsaved = Produce.Unsaved;
+            writer.Crops = Produce.CropClocks;
+            // Silos, feeders, plort collectors and the incinerator (RanchMachines.cs).
+            Machines = new RanchMachines(this);
+            AddChild(Machines);
+        }
+        catch (Exception e) when (Array.IndexOf(args, "--m6-check") >= 0)
+        {
+            // A check that can't start would leave the game idling until the runner's timeout: quit instead.
+            GD.PrintErr($"m6-check could not start: {e}");
+            Callable.From(() => GetTree().Quit(1)).CallDeferred();
+            throw;
+        }
 
         // The live plots are what the checks and the writer see.
         saved.LiveRenderers = () => Plots.Renderers;

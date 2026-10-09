@@ -28,7 +28,7 @@ public partial class RanchMachines : Node
     {
         Name = "Machines";
         _economy = economy;
-        Data = PlotMachineData.Read(economy.Plots.Layout, economy.Names);
+        Data = PlotMachineData.Read(economy.Plots.Layout, economy.Names, economy.M2.Scripts);
         _incinerator = economy.Names.Value(GameEnum.PlotType, "INCINERATOR");
     }
 
@@ -65,7 +65,7 @@ public partial class RanchMachines : Node
     private bool IsOn(RanchPlots.Site site, long obj) => site.Placed.Prefab.Tree?.IsOn(obj, site.Placed.Upgrades.Switched) == true;
 
     private PrefabScriptPart? ScriptOn(RanchPlots.Site site, string scriptClass) =>
-        site.Placed.Prefab.Tree?.Scripts.FirstOrDefault(s => s.Class == scriptClass && IsOn(site, s.Object));
+        site.Placed.Prefab.Tree?.Scripts.FirstOrDefault(s => s.Class == scriptClass && s.Enabled && IsOn(site, s.Object));
 
     // The trigger areas of the site's catchers and incinerator, under the site's node (rebuilt with it).
     private void Wire(RanchPlots.Site site)
@@ -106,7 +106,7 @@ public partial class RanchMachines : Node
     public bool Catch(string siteId, CatcherPart catcher, Node body)
     {
         if (body is not Slimes.Actor actor || !IsInstanceValid(actor) || actor.Consumed || !actor.Vacuumable || actor.CaughtBy is not null
-            || Plots.Ranch.FindPlot(siteId) is not { } plot || !catcher.Store.TryAdd(Slots(plot, catcher.Store), ItemNumber(actor.Id), actor.Id, catcher.Slot))
+            || Plots.Ranch.FindPlot(siteId) is not { } plot || !catcher.Store.TryAdd(Slots(plot, catcher.Store), ItemNumber(actor.Id), actor.Id, catcher.SlotFor(plot.SiloSlotSelections)))
             return false;
         Log.Add((siteId, "caught", actor.Id, Now));
         actor.Consume();
@@ -162,7 +162,7 @@ public partial class RanchMachines : Node
         if (Mathf.RadToDeg(forward.AngleTo(toward)) > CatcherPart.OutputAngleDegrees)
             return;
         var plot = site.Placed.Plot;
-        if (StoreRules.TakeOne(Slots(plot, catcher.Store), catcher.Slot) is not { } item)
+        if (StoreRules.TakeOne(Slots(plot, catcher.Store), catcher.SlotFor(plot.SiloSlotSelections)) is not { } item)
             return;
         var name = _economy.Names.Name(GameEnum.ItemId, item);
         if (_economy.M2.Catalog.Prefabs.Has(name))

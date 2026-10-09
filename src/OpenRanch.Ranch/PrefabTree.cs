@@ -21,7 +21,13 @@ public sealed record PrefabRegion(PlotRegion Region, IReadOnlyList<long> Chain);
 public sealed record PrefabTrigger(PlotRegion Region, IReadOnlyList<long> Chain, long Object, bool Sphere = false);
 
 /// <summary>An enabled script component of a prefab: its class, the game object it sits on, its fields and the file it is in.</summary>
-public sealed record PrefabScriptPart(string Class, long Object, OpenRanch.Formats.Unity.Managed.SerializedObject Data, SerializedFile File);
+public sealed record PrefabScriptPart(string Class, long Object, OpenRanch.Formats.Unity.Managed.SerializedObject Data, SerializedFile File)
+{
+    /// <summary>The script component's own path id (what other scripts' references to it hold).</summary>
+    public long Component { get; init; }
+    /// <summary>Whether the component itself is enabled in the prefab.</summary>
+    public bool Enabled { get; init; } = true;
+}
 
 /// <summary>
 /// Everything a prefab draws and collides with, the objects that are switched off included, so that
@@ -63,11 +69,11 @@ public sealed class PrefabTree
     /// <summary>The colliders (triggers or not) of objects carrying one of <see cref="TriggerScripts"/>, switched on or not.</summary>
     public IReadOnlyList<PrefabTrigger> Triggers { get; }
 
-    /// <summary>Every enabled script component of the prefab, switched on or not.</summary>
+    /// <summary>Every script component of the prefab (that could be read), on objects switched on or not.</summary>
     public IReadOnlyList<PrefabScriptPart> Scripts { get; }
 
-    /// <summary>The first script of <paramref name="scriptClass"/> on the prefab, or null.</summary>
-    public PrefabScriptPart? Script(string scriptClass) => Scripts.FirstOrDefault(s => s.Class == scriptClass);
+    /// <summary>The first enabled script of <paramref name="scriptClass"/> on the prefab, or null.</summary>
+    public PrefabScriptPart? Script(string scriptClass) => Scripts.FirstOrDefault(s => s.Class == scriptClass && s.Enabled);
 
     /// <summary>
     /// Scripts whose trigger colliders are kept as <see cref="Triggers"/>: the menu activator a player
@@ -160,10 +166,12 @@ public sealed class PrefabTree
             var file = goRef.File;
             var components = go.Components.Select(c => assets.Resolve(file, c)).OfType<AssetRef>().ToList();
             var filter = components.Where(c => c.ClassId == UnityClassId.MeshFilter).Select(c => assets.Read(c, MeshFilterData.Read)).FirstOrDefault();
-            var behaviours = components.Where(c => c.ClassId == UnityClassId.MonoBehaviour)
-                .Select(c => scripts.Reader.Read(c)).Where(m => m.Enabled && m.ScriptClass is not null).ToList();
-            var scriptClasses = behaviours.Select(m => m.ScriptClass!).ToList();
-            scriptParts.AddRange(behaviours.Where(m => m.Data is not null).Select(m => new PrefabScriptPart(m.ScriptClass!, goRef.PathId, m.Data!, file)));
+            var allBehaviours = components.Where(c => c.ClassId == UnityClassId.MonoBehaviour)
+                .Select(c => (Ref: c, Data: scripts.Reader.Read(c))).Where(m => m.Data.ScriptClass is not null).ToList();
+            var behaviours = allBehaviours.Where(m => m.Data.Enabled).ToList();
+            var scriptClasses = behaviours.Select(m => m.Data.ScriptClass!).ToList();
+            scriptParts.AddRange(allBehaviours.Where(m => m.Data.Data is not null)
+                .Select(m => new PrefabScriptPart(m.Data.ScriptClass!, goRef.PathId, m.Data.Data!, file) { Component = m.Ref.PathId, Enabled = m.Data.Enabled }));
             var isCorralRegion = scriptClasses.Contains("CorralRegion");
             // A script counts as its base class too (plot activators derive from UIActivator).
             var triggerScript = scriptClasses.Select(c => TriggerScripts.FirstOrDefault(t => t == c

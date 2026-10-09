@@ -1,3 +1,4 @@
+using OpenRanch.Formats.Unity;
 using OpenRanch.Simulation;
 
 namespace OpenRanch.Ranch;
@@ -139,6 +140,19 @@ public sealed record AshRules(float AshPerItem, float MaxAsh)
 /// </summary>
 public sealed record CatcherPart(PrefabTrigger Trigger, StoreRules Store, int Slot, string Type = "SILO_DEFAULT")
 {
+    /// <summary>
+    /// The silo button that picks this catcher's slot (<c>SiloStorageActivator.activatorIdx</c>), or -1, and
+    /// the slots it cycles through (its <c>siloSlotUIs</c>' <c>slotIdx</c>): the catcher fills the slot the
+    /// plot's saved selection for that button names (<see cref="Plot.SiloSlotSelections"/>; static analysis
+    /// of <c>SiloStorageActivator.OnActiveSlotChanged</c>).
+    /// </summary>
+    public int Button { get; init; } = -1;
+    public IReadOnlyList<int> ButtonSlots { get; init; } = [];
+
+    /// <summary>The slot this catcher fills and gives out of now.</summary>
+    public int SlotFor(IReadOnlyList<int> selections) =>
+        Button >= 0 && ButtonSlots.Count > 0 ? ButtonSlots[(Button < selections.Count ? selections[Button] : 0) % ButtonSlots.Count] : Slot;
+
     public bool Input => Type != "SILO_OUTPUT_ONLY";
     public bool Output => Type is "SILO_DEFAULT" or "SILO_OUTPUT_ONLY";
     /// <summary>Real seconds between items given out (<c>SiloCatcher</c>'s 0.25, before its speed-up).</summary>
@@ -157,7 +171,7 @@ public sealed record CatcherPart(PrefabTrigger Trigger, StoreRules Store, int Sl
 public sealed class PlotMachineData
 {
     /// <summary>The feeder's hours per cycle by speed name, from <c>SlimeFeeder</c>'s code.</summary>
-    public static readonly IReadOnlyDictionary<string, float> FeederHoursByName = new Dictionary<string, float> { ["SLOW"] = 9, ["NORMAL"] = 6, ["FAST"] = 3 };
+    public static readonly IReadOnlyDictionary<string, float> FeederHoursByName = new Dictionary<string, float> { ["Slow"] = 9, ["Normal"] = 6, ["Fast"] = 3 };
 
     public Dictionary<int, List<StoreRules>> Stores { get; } = [];
     public Dictionary<int, List<CatcherPart>> Catchers { get; } = [];
@@ -165,7 +179,8 @@ public sealed class PlotMachineData
     public Dictionary<int, (CollectorRules Rules, PrefabTrigger? Area)> Collectors { get; } = [];
     public Dictionary<int, AshRules> Ash { get; } = [];
 
-    public static PlotMachineData Read(PlotLayout layout, IGameNames names)
+    /// <param name="scripts">Reads the silo buttons' slot lists (their UI objects aren't part of the prefab tree's walk).</param>
+    public static PlotMachineData Read(PlotLayout layout, IGameNames names, OpenRanch.Formats.Game.GameScripts? scripts = null)
     {
         var data = new PlotMachineData();
         var hours = FeederHoursByName.ToDictionary(kv => names.Value(GameEnum.FeedSpeed, kv.Key), kv => kv.Value);
@@ -175,7 +190,7 @@ public sealed class PlotMachineData
                 continue;
             var stores = new List<StoreRules>();
             var storeByObject = new Dictionary<long, StoreRules>();
-            foreach (var s in tree.Scripts.Where(s => s.Class == "SiloStorage"))
+            foreach (var s in tree.Scripts.Where(s => s.Class == "SiloStorage" && s.Enabled))
             {
                 var kind = Convert.ToInt32(s.Data["type"]);
                 var store = new StoreRules(kind, names.Name(GameEnum.SiloStorage, kind), Convert.ToInt32(s.Data["numSlots"]), Convert.ToInt32(s.Data["maxAmmo"]));
@@ -186,10 +201,22 @@ public sealed class PlotMachineData
                 data.Stores[type] = stores;
             // A catcher fills the store of the nearest object above it carrying one (SiloCatcher finds its parent's SiloStorage).
             StoreRules? StoreAbove(long obj) => tree.ChainOf(obj).Reverse().Select(o => storeByObject.GetValueOrDefault(o)).FirstOrDefault(s => s is not null);
-            var catchers = tree.Scripts.Where(s => s.Class == "SiloCatcher")
+            var catchers = tree.Scripts.Where(s => s.Class == "SiloCatcher" && s.Enabled)
                 .SelectMany(s => tree.Triggers.Where(t => t.Region.Class == "SiloCatcher" && t.Object == s.Object)
                     .Select(t => (t, store: StoreAbove(s.Object), slot: Convert.ToInt32(s.Data["slotIdx"]), kind: names.Name("SiloCatcher.Type", Convert.ToInt64(s.Data["type"])))))
-                .Where(c => c.store is not null).Select(c => new CatcherPart(c.t, c.store!, c.slot, c.kind)).ToList();
+                .Where(c => c.store is not null).Select(c =>
+                {
+                    var catcherScript = tree.Scripts.First(s => s.Class == "SiloCatcher" && s.Object == c.t.Object);
+                    var button = tree.Scripts.FirstOrDefault(b => b.Class == "SiloStorageActivator" && b.Data["siloCatcher"] is PPtr p && p.PathId == catcherScript.Component);
+                    var slots = button is null ? new List<int>() : button.Data.List("siloSlotUIs").OfType<PPtr>()
+                        .Select(p => tree.Scripts.FirstOrDefault(u => u.Component == p.PathId)?.Data["slotIdx"] ?? scripts?.Follow(button.File, p)?.Data.Data?["slotIdx"])
+                        .OfType<object>().Select(Convert.ToInt32).ToList();
+                    return new CatcherPart(c.t, c.store!, c.slot, c.kind)
+                    {
+                        Button = button is null ? -1 : Convert.ToInt32(button.Data["activatorIdx"]),
+                        ButtonSlots = slots,
+                    };
+                }).ToList();
             if (catchers.Count > 0)
                 data.Catchers[type] = catchers;
             if (tree.Script("SlimeFeeder") is { } feeder)

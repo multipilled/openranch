@@ -19,7 +19,7 @@ public class PlotMachinesTests(ITestOutputHelper output)
         Assert.False(food.TryAdd(slots, Carrot, "CARROT_VEGGIE")); // its slot is full; the empty one isn't used
         Assert.True(food.TryAdd(slots, Beet, "BEET_VEGGIE"));
         Assert.False(food.TryAdd(slots, PinkPlort, "PINK_PLORT"));
-        Assert.Equal([new AmmoSlot(Carrot, 2), new AmmoSlot(Beet, 1)], slots);
+        Assert.Equal([(Carrot, 2), (Beet, 1)], slots.Select(x => (x.Id, x.Count)));
         Assert.Equal(Carrot, StoreRules.TakeOne(slots, 0));
         Assert.Equal(Beet, StoreRules.TakeOne(slots, 1));
         Assert.Null(StoreRules.TakeOne(slots, 1));
@@ -62,11 +62,11 @@ public class PlotMachinesTests(ITestOutputHelper output)
         using var scripts = new GameScripts(GameFactAttribute.Install!);
         using var names = new GameEnums(GameFactAttribute.Install!);
         var layout = PlotLayout.Read(scripts, scripts.Assets.File("level3")!, "zoneRANCH");
-        var data = PlotMachineData.Read(layout, names);
+        var data = PlotMachineData.Read(layout, names, scripts);
         foreach (var (type, stores) in data.Stores)
             output.WriteLine($"{names.PlotType(type)} stores: {string.Join(", ", stores.Select(s => $"{s.KindName} {s.Slots}x{s.MaxPerSlot}"))}");
         foreach (var (type, catchers) in data.Catchers)
-            output.WriteLine($"{names.PlotType(type)} catchers: {string.Join(", ", catchers.Select(c => $"{c.Store.KindName} slot {c.Slot}"))}");
+            output.WriteLine($"{names.PlotType(type)} catchers: {string.Join(", ", catchers.Select(c => $"{c.Store.KindName} slot {c.Slot} (button {c.Button}: {string.Join("/", c.ButtonSlots)})"))}");
         foreach (var (type, f) in data.Feeders)
             output.WriteLine($"{names.PlotType(type)} feeder: {f.ItemsPerFeeding} per feeding");
         foreach (var (type, c) in data.Collectors)
