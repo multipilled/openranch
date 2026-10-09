@@ -47,13 +47,61 @@ public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Ho
 /// </summary>
 public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats,
     IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights, IReadOnlyList<TimedGroup>? Timed = null,
-    IReadOnlyList<CellArea>? CellAreas = null, IReadOnlyList<TeleportPoint>? TeleportPoints = null, IReadOnlyList<TriggerVolume>? Kills = null)
+    IReadOnlyList<CellArea>? CellAreas = null, IReadOnlyList<TeleportPoint>? TeleportPoints = null, IReadOnlyList<TriggerVolume>? Kills = null,
+    IReadOnlyList<TeleportSourceItem>? Sources = null)
 {
     public IReadOnlyList<TimedGroup> TimedGroups => Timed ?? [];
     public IReadOnlyList<CellArea> Cells => CellAreas ?? [];
     public IReadOnlyList<TeleportPoint> Teleports => TeleportPoints ?? [];
     public IReadOnlyList<TriggerVolume> KillVolumes => Kills ?? [];
+    /// <summary>The teleporters' entrances: triggers that send the player to a destination by name.</summary>
+    public IReadOnlyList<TeleportSourceItem> TeleportSources => Sources ?? [];
 }
+
+/// <summary>
+/// A zone root split the way the game loads it (docs/behavior/zones.md, "Joining the zones"): what is always
+/// there while the zone's region set is live (<see cref="Always"/>, which also lists every cell, teleport
+/// destination, cave and kill volume of the zone), and each cell's own objects (<see cref="Regions"/>), which load
+/// and unload with the cell. <see cref="Zone"/> is the zone id of the root's <c>ZoneDirector</c> (ZoneDirector.Zone).
+/// </summary>
+public sealed record ZoneParts(string Name, int Zone, ZoneExtract Always, IReadOnlyList<RegionPart> Regions, IReadOnlyList<WakeUpPoint> WakeUps)
+{
+    /// <summary>Everything in one list, as if every cell were loaded.</summary>
+    public ZoneExtract Merged() => Always with
+    {
+        Renderers = Always.Renderers.Concat(Regions.SelectMany(r => r.Content.Renderers)).ToList(),
+        Colliders = Always.Colliders.Concat(Regions.SelectMany(r => r.Content.Colliders)).ToList(),
+        Lights = Always.Lights.Concat(Regions.SelectMany(r => r.Content.Lights)).ToList(),
+        Timed = Always.TimedGroups.Concat(Regions.SelectMany(r => r.Content.TimedGroups)).ToList(),
+        Sources = Always.TeleportSources.Concat(Regions.SelectMany(r => r.Content.TeleportSources)).ToList(),
+    };
+}
+
+/// <summary>
+/// A cell's loadable part: the objects under its region's <c>root</c> (the cell's "Sector"), switched on while the
+/// region is loaded and off otherwise, and the low-detail stand-in the game draws in their place while the region's
+/// set is live but the region is not loaded (<c>proxyMesh</c> with <c>proxyMaterials</c>, placed at the cell
+/// object's position, rotation and scale; static analysis: Region.Proxy/CreateProxy).
+/// </summary>
+public sealed record RegionPart(CellArea Cell, Matrix4x4 World, AssetRef? ProxyMesh, IReadOnlyList<AssetRef?> ProxyMaterials, ZoneExtract Content);
+
+/// <summary>
+/// A teleporter's entrance (<c>TeleportSource</c>): touching its trigger sends the player to a destination named
+/// <see cref="Destination"/> (destinationSetName). Its link is shut while <see cref="WaitForExternalActivation"/> is
+/// set, while its blocker object (<see cref="Blocker"/>, a game object path id, such as a gordo in the way) is active,
+/// while the player lacks <see cref="ActivationProgress"/> (-1 for none) or while its quicksilver generator runs
+/// (static analysis: TeleportSource.IsLinkActive). <see cref="InEchoNoteGordo"/> marks the teleporters inside echo
+/// note gordos, which switch themselves off outside the holiday events that list them (EchoNoteGordo.OnEnable).
+/// </summary>
+public sealed record TeleportSourceItem(string Path, long ObjectId, ColliderItem Trigger, string Destination, int ActivationProgress,
+    long? Blocker, bool BlockerActive, bool WaitForExternalActivation, bool HasGenerator, bool InEchoNoteGordo);
+
+/// <summary>
+/// Where the player wakes after dying (<c>WakeUpDestination</c>): the game keeps one per region set, keyed by
+/// <see cref="DeathRegionSet"/>, and sends a player who dies in a set without one to the HOME set's
+/// (static analysis: SceneContext.Register/GetWakeUpDestination, PlayerDeathHandler.ResetPlayer).
+/// </summary>
+public sealed record WakeUpPoint(string Path, Matrix4x4 World, int DeathRegionSet);
 
 /// <summary>
 /// A world cell: its region's box in world space (a <c>Region</c> script's <c>bounds</c>) and the ambience
@@ -74,7 +122,7 @@ public sealed record CellArea(string Path, int AmbianceZone, Vector3 Center, Vec
 /// position and, with <see cref="Reorient"/>, takes its rotation) or a <c>DebugTeleportDestination</c>, the
 /// developers' named start point for a zone (<see cref="IsDebugStart"/>).
 /// </summary>
-public sealed record TeleportPoint(string Name, string Path, Matrix4x4 World, bool Reorient, bool IsDebugStart);
+public sealed record TeleportPoint(string Name, string Path, Matrix4x4 World, bool Reorient, bool IsDebugStart, long ObjectId = 0);
 
 /// <summary>
 /// A trigger volume, such as a <c>KillOnTrigger</c> under a sea, in the same terms as <see cref="CaveVolume"/>.
@@ -138,26 +186,48 @@ public static class ZoneExtractor
         return roots;
     }
 
-    public static ZoneExtract Extract(AssetSet assets, SerializedFile scene, string rootName, WorldState? state = null)
+    public static ZoneExtract Extract(AssetSet assets, SerializedFile scene, string rootName, WorldState? state = null) =>
+        ExtractParts(assets, scene, rootName, state).Merged();
+
+    // What the walk collects for one part of a zone: the zone's always-there objects, or one cell's region root.
+    private sealed class Bucket
+    {
+        public readonly List<RenderItem> Renderers = [];
+        public readonly List<ColliderItem> Colliders = [];
+        public readonly List<LightItem> Lights = [];
+        public readonly List<TimedGroup> Timed = [];
+        public readonly List<TeleportSourceItem> Sources = [];
+    }
+
+    // A cell's region, read on the cell object and waiting for the walk to reach its root.
+    private sealed record PendingRegion(CellArea Cell, Matrix4x4 World, AssetRef? ProxyMesh, IReadOnlyList<AssetRef?> ProxyMaterials);
+
+    /// <summary>
+    /// Walks one root like <see cref="Extract"/>, keeping each cell's region root (the objects the game switches on and
+    /// off as the cell loads and unloads) apart from the rest. See <see cref="ZoneParts"/>.
+    /// </summary>
+    public static ZoneParts ExtractParts(AssetSet assets, SerializedFile scene, string rootName, WorldState? state = null)
     {
         state ??= WorldState.NewGame;
         var roots = RootObjects(assets, scene);
         if (!roots.TryGetValue(rootName, out var root))
             throw new KeyNotFoundException($"No root object named '{rootName}' in {Path.GetFileName(scene.Path)}.");
 
-        var renderers = new List<RenderItem>();
-        var colliders = new List<ColliderItem>();
+        var always = new Bucket();
+        var regions = new List<(PendingRegion Region, Bucket Content)>();
+        var pending = new Dictionary<long, PendingRegion>();
         var caves = new List<CaveVolume>();
-        var lights = new List<LightItem>();
         var cells = new List<CellArea>();
         var teleports = new List<TeleportPoint>();
         var killVolumes = new List<TriggerVolume>();
+        var wakeUps = new List<WakeUpPoint>();
+        var zoneId = -1;
         var lowerLods = new HashSet<long>();
         var hiddenObjects = new HashSet<long>(state.Hidden ?? new HashSet<long>());
         // Objects tied to the time of day, with their windows, by game object id (only with a running clock).
         var windows = new Dictionary<long, List<TimeWindow>>();
         var timed = new Dictionary<IReadOnlyList<TimeWindow>, TimedGroup>(ReferenceEqualityComparer.Instance);
-        int nodes = 0, inactive = 0, triggers = 0;
+        int nodes = 0, inactive = 0, triggers = 0, renderCount = 0, colliderCount = 0;
 
         // First pass: renderers that only show at lower levels of detail, and objects hidden at runtime.
         void CollectLods(AssetRef transformRef)
@@ -187,7 +257,7 @@ public static class ZoneExtractor
         }
         CollectLods(root);
 
-        void Walk(AssetRef transformRef, Matrix4x4 parentWorld, string parentPath, IReadOnlyList<TimeWindow> openDuring)
+        void Walk(AssetRef transformRef, Matrix4x4 parentWorld, string parentPath, IReadOnlyList<TimeWindow> openDuring, Bucket bucket, bool inEchoNote)
         {
             var t = assets.Read(transformRef, TransformData.Read);
             var go = assets.Read(scene, t.GameObject, GameObjectData.Read);
@@ -202,10 +272,18 @@ public static class ZoneExtractor
 
             var world = t.LocalMatrix * parentWorld;
             var path = parentPath.Length == 0 ? go.Name : parentPath + "/" + go.Name;
+            // A cell's region root: everything under it loads and unloads with the cell (Region.Proxy/Unproxy).
+            if (t.GameObject.FileId == 0 && pending.Remove(t.GameObject.PathId, out var region))
+            {
+                bucket = new Bucket();
+                regions.Add((region, bucket));
+            }
             if (t.GameObject.FileId == 0 && windows.TryGetValue(t.GameObject.PathId, out var own))
             {
                 openDuring = openDuring.Concat(own).ToList();
-                timed[openDuring] = new TimedGroup(path, openDuring, [], [], []);
+                var newGroup = new TimedGroup(path, openDuring, [], [], []);
+                timed[openDuring] = newGroup;
+                bucket.Timed.Add(newGroup);
             }
             var group = openDuring.Count == 0 ? null : timed[openDuring];
 
@@ -213,7 +291,8 @@ public static class ZoneExtractor
             CaveSettingsData? cave = null;
             long? caveLightController = null;
             int? ambianceZone = null;
-            (Vector3 Center, Vector3 Extent)? regionBounds = null;
+            RegionData? regionData = null;
+            TeleportSourceData? source = null;
             var kills = false;
             foreach (var c in go.Components)
             {
@@ -234,23 +313,40 @@ public static class ZoneExtractor
                             ambianceZone = CellAmbianceZone(assets, script);
                             break;
                         case "Region":
-                            regionBounds = RegionBounds(assets, script);
+                            regionData = ReadRegion(assets, scene, script);
                             break;
                         case "KillOnTrigger":
                             kills = true;
                             break;
                         case "TeleportDestination":
-                            teleports.Add(TeleportDestination(assets, script, path, world));
+                            teleports.Add(TeleportDestination(assets, script, path, world) with { ObjectId = t.GameObject.PathId });
+                            break;
+                        case "TeleportSource":
+                            source = ReadTeleportSource(assets, scene, script, hiddenObjects);
                             break;
                         case "DebugTeleportDestination":
-                            teleports.Add(new TeleportPoint(DebugTeleportName(assets, script), path, world, true, true));
+                            teleports.Add(new TeleportPoint(DebugTeleportName(assets, script), path, world, true, true, t.GameObject.PathId));
+                            break;
+                        case "EchoNoteGordo":
+                            inEchoNote = true;
+                            break;
+                        case "ZoneDirector":
+                            zoneId = FirstInt(assets, script);
+                            break;
+                        case "WakeUpDestination":
+                            wakeUps.Add(new WakeUpPoint(path, world, FirstInt(assets, script)));
                             break;
                     }
                 }
             }
             // The Region script finds its CellDirector on the same object (static analysis: Region.Awake).
-            if (ambianceZone is { } az && regionBounds is { } rb)
-                cells.Add(new CellArea(path, az, rb.Center, rb.Extent));
+            if (ambianceZone is { } az && regionData is { } rd)
+            {
+                var cell = new CellArea(path, az, rd.Center, rd.Extent);
+                cells.Add(cell);
+                if (rd.Root is { } rootId)
+                    pending[rootId] = new PendingRegion(cell, world, rd.ProxyMesh, rd.ProxyMaterials);
+            }
 
             foreach (var c in go.Components)
             {
@@ -266,17 +362,19 @@ public static class ZoneExtractor
                         if (assets.Resolve(scene, filter.Mesh) is not { } mesh)
                             continue;
                         var materials = r.Materials.Select(m => assets.Resolve(scene, m)).ToList();
-                        (group?.Renderers ?? renderers).Add(r.IsStaticBatched
+                        (group?.Renderers ?? bucket.Renderers).Add(r.IsStaticBatched
                             ? new RenderItem(path, Matrix4x4.Identity, mesh, r.StaticBatchFirstSubMesh, r.StaticBatchSubMeshCount,
                                 materials, true, r.CastShadows, go.Layer)
                             : new RenderItem(path, world, mesh, 0, -1, materials, false, r.CastShadows, go.Layer));
+                        if (group is null)
+                            renderCount++;
                         break;
                     }
                     case UnityClassId.Light:
                     {
                         var light = ReadLight(assets, comp);
                         if (light.Type is 0 or 2 && (light.Enabled || caveLightController is not null))
-                            (group?.Lights ?? lights).Add(light with { Path = path, World = world, CaveController = caveLightController });
+                            (group?.Lights ?? bucket.Lights).Add(light with { Path = path, World = world, CaveController = caveLightController });
                         break;
                     }
                     case UnityClassId.BoxCollider or UnityClassId.SphereCollider or UnityClassId.CapsuleCollider or UnityClassId.MeshCollider:
@@ -292,12 +390,22 @@ public static class ZoneExtractor
                                     cs.Lights));
                             if (kills && CaveBounds(assets, scene, col) is { } killBounds)
                                 killVolumes.Add(new TriggerVolume(path, world, col.Shape, killBounds.Min, killBounds.Max, col.Radius, go.Layer));
+                            // The teleporter's own trigger, on the same object (TeleportSource.OnTriggerEnter).
+                            if (source is { } s)
+                            {
+                                var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
+                                bucket.Sources.Add(new TeleportSourceItem(path, t.GameObject.PathId, new ColliderItem(path, world, col, mesh, go.Layer),
+                                    s.Destination, s.ActivationProgress, s.Blocker, s.BlockerActive, s.WaitForExternalActivation, s.HasGenerator, inEchoNote));
+                                source = null;
+                            }
                             continue;
                         }
-                        var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
-                        if (col.Shape == ColliderShape.Mesh && mesh is null)
+                        var solidMesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
+                        if (col.Shape == ColliderShape.Mesh && solidMesh is null)
                             continue;
-                        (group?.Colliders ?? colliders).Add(new ColliderItem(path, world, col, mesh, go.Layer));
+                        (group?.Colliders ?? bucket.Colliders).Add(new ColliderItem(path, world, col, solidMesh, go.Layer));
+                        if (group is null)
+                            colliderCount++;
                         break;
                     }
                 }
@@ -305,13 +413,70 @@ public static class ZoneExtractor
 
             foreach (var child in t.Children)
                 if (assets.Resolve(scene, child) is { } childRef)
-                    Walk(childRef, world, path, openDuring);
+                    Walk(childRef, world, path, openDuring, bucket, inEchoNote);
         }
-        Walk(root, Matrix4x4.Identity, "", []);
+        Walk(root, Matrix4x4.Identity, "", [], always, false);
 
-        return new ZoneExtract(rootName, renderers, colliders,
-            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights, timed.Values.ToList(),
-            cells, teleports, killVolumes);
+        var stats = new ZoneStats(nodes, inactive, renderCount, lowerLods.Count, colliderCount, triggers);
+        ZoneExtract Part(string name, Bucket b, bool everything) => new(name, b.Renderers, b.Colliders, stats,
+            everything ? caves : [], b.Lights, b.Timed, everything ? cells : [], everything ? teleports : [], everything ? killVolumes : [], b.Sources);
+        return new ZoneParts(rootName, zoneId, Part(rootName, always, true),
+            regions.Select(r => new RegionPart(r.Region.Cell, r.Region.World, r.Region.ProxyMesh, r.Region.ProxyMaterials,
+                Part(r.Region.Cell.Path, r.Content, false))).ToList(),
+            wakeUps);
+    }
+
+    // The first serialized field of a script, an int32 or enum: ZoneDirector's zone, WakeUpDestination's deathRegionSetId.
+    private static int FirstInt(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        return r.ReadInt32();
+    }
+
+    private sealed record RegionData(Vector3 Center, Vector3 Extent, long? Root, AssetRef? ProxyMesh, IReadOnlyList<AssetRef?> ProxyMaterials);
+
+    // Region: overrideBounds (bool, padded to 4), bounds (centre, extent), root (the game object the region switches),
+    // proxyMesh and proxyMaterials, in the game's managed metadata order. The bounds are already in world space: the game
+    // registers them as stored (static analysis: Region.OnEnable, RegionRegistry.RegisterRegion).
+    private static RegionData ReadRegion(AssetSet assets, SerializedFile scene, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        r.Skip(4);
+        var center = r.ReadVector3();
+        var extent = r.ReadVector3();
+        var root = PPtr.Read(r);
+        var proxy = PPtr.Read(r);
+        var count = r.ReadInt32();
+        var materials = new List<AssetRef?>();
+        for (var i = 0; i < count; i++)
+            materials.Add(assets.Resolve(scene, PPtr.Read(r)));
+        return new RegionData(center, extent, root.FileId == 0 && !root.IsNull ? root.PathId : null,
+            proxy.IsNull ? null : assets.Resolve(scene, proxy), materials);
+    }
+
+    private sealed record TeleportSourceData(string Destination, int ActivationProgress, long? Blocker, bool BlockerActive, bool WaitForExternalActivation,
+        bool HasGenerator);
+
+    // TeleportSource, in the game's managed metadata order: activationBlocker (game object), activationProgress
+    // (ProgressType, -1 NONE), setProgressTypesOnActivate (int array), blockingGenerator, departFX, activeFX,
+    // destinationSetName, waitForExternalActivation, waitForTriggerExit.
+    private static TeleportSourceData ReadTeleportSource(AssetSet assets, SerializedFile scene, AssetRef behaviour, IReadOnlySet<long> hidden)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        var blocker = PPtr.Read(r);
+        var progress = r.ReadInt32();
+        r.Skip(4 * r.ReadInt32());
+        var generator = PPtr.Read(r);
+        r.Skip(12 + 12);
+        var destination = r.ReadAlignedString();
+        var waitForExternal = r.ReadBool();
+        // The blocker counts while it is active in the scene and nothing in the world state removed it.
+        long? blockerId = blocker.FileId == 0 && !blocker.IsNull ? blocker.PathId : null;
+        var blockerActive = blockerId is { } id && !hidden.Contains(id) && assets.Read(scene, blocker, GameObjectData.Read) is { IsActive: true };
+        return new TeleportSourceData(destination, progress, blockerId, blockerActive, waitForExternal, !generator.IsNull);
     }
 
     // CellDirector's serialized fields up to its ambience zone (from the game's managed metadata): eight
@@ -323,16 +488,6 @@ public static class ZoneExtractor
         Unity.Managed.MonoBehaviourReader.ReadHeader(r);
         r.Skip(8 * 4 + 2 * 4 + 3 * 4);
         return r.ReadInt32();
-    }
-
-    // Region: overrideBounds (bool, padded to 4), then bounds (centre, extent), already in world space:
-    // the game registers them as stored (static analysis: Region.OnEnable, RegionRegistry.RegisterRegion).
-    private static (Vector3 Center, Vector3 Extent) RegionBounds(AssetSet assets, AssetRef behaviour)
-    {
-        var r = assets.Reader(behaviour);
-        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
-        r.Skip(4);
-        return (r.ReadVector3(), r.ReadVector3());
     }
 
     // TeleportDestination: destLoc and arriveFX references, teleportDestinationName, reorient. The game moves
