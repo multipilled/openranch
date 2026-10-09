@@ -20,6 +20,8 @@ namespace OpenRanch.Game;
 ///   --save FILE                     open this save: an original v12 save or an openranch .ranch.json (plots,
 ///                                   corral slimes, money, ranch upgrades, time of day); read only
 ///   --m3-check                      with --save: check the ranch against the save reader, print a report, quit
+///   --save-out FILE                 with --save: once the world has settled, write the live ranch to FILE
+///                                   (.ranch.json), then quit (unless --m3-check runs); in play F5 saves
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
@@ -106,6 +108,9 @@ public partial class Ranch : Node3D
         {
             AddChild(m2);
             saved?.Populate(m2);
+            // Milestone 3: the live ranch saves back to openranch's own format (SaveLoad/SaveWriter.cs).
+            if (saved is not null)
+                AddChild(new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0));
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
                 AddChild(new SaveLoad.M3Check(saved, zone, m2, install));
         }
