@@ -20,6 +20,11 @@ public partial class Actor : RigidBody3D
     public ItemKind Kind => Items.KindOf(Id);
     /// <summary>Whether the vacpack can suck it up (it has a Vacuumable component of normal size).</summary>
     public bool Vacuumable { get; set; }
+    /// <summary>
+    /// Whether slimes may go for it and eat it. Produce is edible only once it has left its crop and
+    /// before it rots (static analysis: the produce model counts as edible only in its edible state).
+    /// </summary>
+    public bool Edible { get; set; } = true;
     /// <summary>The radius of its solid colliders, in metres.</summary>
     public float Radius { get; set; }
     /// <summary>The drawn model; scaled when the item grows in or shrinks away.</summary>

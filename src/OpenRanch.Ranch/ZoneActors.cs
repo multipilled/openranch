@@ -37,7 +37,8 @@ public sealed record ZoneRegions(int RegionSet, IReadOnlyList<(string Path, Vect
 /// <summary>A saved actor to put back into the zone, and whether it hangs from a crop's spawn joint.</summary>
 /// <param name="Joint">The spawn joint it hangs from (world position), or null when it lies loose.</param>
 /// <param name="Unripe">Still growing: drawn at a third of its size and not vacuumable until ripe.</param>
-public sealed record ZoneActor(Actor Saved, string Id, Vector3 Position, Vector3 EulerDegrees, Vector3? Joint, bool Unripe);
+/// <param name="Edible">Whether slimes may eat it: not while it hangs from a crop, and not once rotten (static analysis: produce is edible only in its edible state).</param>
+public sealed record ZoneActor(Actor Saved, string Id, Vector3 Position, Vector3 EulerDegrees, Vector3? Joint, bool Unripe, bool Edible = true);
 
 /// <summary>
 /// The loose actors of a save inside one zone (everything but slimes and largos: food, plorts,
@@ -73,7 +74,8 @@ public static class ZoneActors
             Vector3? joint = null;
             if (hasCycle(id) && (actor.CycleState == unripe || actor.CycleState == ripe))
                 joint = NearestJoint(spawners, at);
-            list.Add(new ZoneActor(actor, id, at, euler, joint, joint is not null && actor.CycleState == unripe));
+            var rotten = hasCycle(id) && names.Name(GameEnum.ResourceCycleState, actor.CycleState) == "ROTTEN";
+            list.Add(new ZoneActor(actor, id, at, euler, joint, joint is not null && actor.CycleState == unripe, joint is null && !rotten));
         }
         return list;
     }

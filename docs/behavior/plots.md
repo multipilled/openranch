@@ -158,10 +158,15 @@ independent read of the save asks for (Game2 and Logansfarm saves).
   as edible. Unripe produce is drawn at a third of its size and can't be vacuumed; ripe produce lets
   go of its joint once the vacpack has pulled at it for its prefab's release time, then falls.
   Edible and rotten produce lies loose.
+- Slimes don't go for or eat produce while it hangs from its crop, unripe or ripe: produce is only
+  edible in its edible stage, which begins when it lets go of its joint. Rotten produce isn't edible
+  either. Crops standing in corrals (the Game2 ranch has some) keep their produce until it is picked.
 
 Checked: from static analysis of `LandPlot.SetModel`, `ResourceCycle` and `SpawnResource`; the
 crop prefabs and joints are read from the install. On the Game2 ranch 135 pieces of produce hang
-from 14 crops (94 unripe), checked headless with `--m3-check`.
+from 14 crops (94 unripe), checked headless with `--m3-check`, which also checks that the corral
+slimes left all of it hanging. The edible rule is from static analysis of the produce model
+(`ProduceModel.IsEdible`) and the slimes' food search and eating (`FindConsumable`, `SlimeEat`).
 
 ## Loose things on a loaded ranch
 

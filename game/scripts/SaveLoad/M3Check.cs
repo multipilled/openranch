@@ -187,8 +187,11 @@ public partial class M3Check : Node
         var heldSpawns = _saved.SpawnedLoose.Where(s => s.Saved.Joint is not null).ToList();
         var picked = heldSpawns.Count(s => !GodotObject.IsInstanceValid(s.Actor) || s.Actor.Consumed);
         var moved = heldSpawns.Where(s => hanging.Contains(s.Actor) && N.Vector3.Distance(Unity(s.Actor.GlobalPosition), s.Saved.Position) > 0.01f).ToList();
-        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count + picked == onJoints.Count && moved.Count == 0,
-            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging, {picked} eaten; " +
+        // Slimes leave hanging produce alone (CropHold), so nothing is picked without the vacpack.
+        var edibleHanging = hanging.Count(a => a.Edible);
+        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count == onJoints.Count && picked == 0
+              && edibleHanging == 0 && moved.Count == 0,
+            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging ({edibleHanging} edible), {picked} eaten; " +
             $"save {onJoints.Count} ({onJoints.Count(a => a.Unripe)} unripe); {moved.Count} moved");
 
         // Nothing loose fell through the ground; what slimes ate is reported.

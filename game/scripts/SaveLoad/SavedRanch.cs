@@ -202,6 +202,7 @@ public sealed class SavedRanch
             // Unity's Euler angles turn about Z, then X, then Y, as System.Numerics' yaw, pitch and roll do.
             var e = saved.EulerDegrees * (Mathf.Pi / 180);
             actor.Transform = UnityConvert.Transform(N.Matrix4x4.CreateFromYawPitchRoll(e.Y, e.X, e.Z) * N.Matrix4x4.CreateTranslation(saved.Position));
+            actor.Edible = saved.Edible;
             if (saved.Joint is not null)
                 Hold.Add(actor, saved.Unripe, m2.Catalog.Prefabs.Get(saved.Id).RootFloat("ResourceCycle", "releasePrepTime", 0));
             SpawnedLoose.Add((saved, actor));
