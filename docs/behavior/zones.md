@@ -73,6 +73,15 @@ ground; the ground under it is. Seas end in a `KillOnTrigger` box (the Slime Sea
 sand sea, `seaKillCube`) that kills what falls in. Triggers only meet bodies on layers that collide with
 theirs: the Ranch's `NonPlayerKillVolume` boxes are on a layer the player's doesn't meet.
 
+## The one terrain
+
+The world is built from meshes apart from one Unity terrain, `terCellReef02_01` in the Dry Reef's Hub cell
+(base at y = -24.7): a 129 x 129 heightmap 45 x 45 m across and 50 m tall, mostly the floor under the edge of
+the water there. Its terrain data names no terrain layers and no splat textures, and its `TerrainCollider` is
+stored as a trigger and switched off, so in the original it is something to see, not ground. openranch
+builds no terrain yet; walking is unaffected. Read from the scene's Terrain and TerrainCollider components
+and the TerrainData object (sharedassets3), whose fields after the heights parse to the object's exact end.
+
 ## In openranch
 
 Per zone, from `--zone X --collision-check` (Godot 4.7.2, this PC, new game at noon): reading the scene
