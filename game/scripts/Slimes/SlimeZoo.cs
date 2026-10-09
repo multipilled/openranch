@@ -55,6 +55,7 @@ public partial class SlimeZoo : Node3D
     private double _time, _builtAt = -1, _largoAt, _tarrAt;
     // The trial the player stands in for now (trials that need the player take turns).
     private ZooTrial? _playerHolder;
+    private Vector3 _heldAt;
 
     public SlimeZoo(M2World m2, PlayerController player, string[] args)
     {
@@ -90,6 +91,13 @@ public partial class SlimeZoo : Node3D
         Refeed();
         if (_playerHolder is { Done: true })
             _playerHolder = null;
+        // Pinned in place every step: a kinematic body moved by setting its position keeps that jump as
+        // its velocity and flings whatever lands on it (a feral largo left at 1000+ m/s).
+        if (_playerHolder is not null)
+        {
+            _player.GlobalPosition = _heldAt;
+            _player.Velocity = Vector3.Zero;
+        }
         if (!_check)
             return;
         var eatDone = !Runs("eat") || (_pens.All(p => p.Done) && _largo is not null && _tarr is not null);
@@ -236,7 +244,8 @@ public partial class SlimeZoo : Node3D
             return false;
         if (_playerHolder is null)
         {
-            _player.GlobalPosition = onFloor + Vector3.Up * 0.05f;
+            _heldAt = onFloor + Vector3.Up * 0.05f;
+            _player.GlobalPosition = _heldAt;
             _player.Velocity = Vector3.Zero;
         }
         _playerHolder = trial;

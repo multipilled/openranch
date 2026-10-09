@@ -315,7 +315,8 @@ public static class AbilityTrials
             Verdict = t => (t.Piece.DoesParkour && t.Piece.Feints > 0, $"{t.LastLine}; feinted {t.Piece.Feints} time(s) first (55-80 degrees)"),
         };
 
-        yield return new AbilityTrial<Gather>("TABBY_CARRY", "TABBY_SLIME", group: "feeding")
+        // The player is prey too, so it is held 60 m up, out of the tabby's 45 m reach.
+        yield return new AbilityTrial<Gather>("TABBY_CARRY", "TABBY_SLIME", new Vector3(0, 60, 0), group: "feeding")
         {
             Setup = t =>
             {
@@ -359,7 +360,8 @@ public static class AbilityTrials
                     return t.Time - t.FiredAt > 5 ? (false, $"{t.LastLine}; only {t.Piece.CoinsGiven} coins") : null;
                 var wallet = t.Catalog.Wallet is { } w ? w.Coins - (int)t.Notes["coins"] : -1;
                 var vanish = (t.Piece.VanishAt ?? 0) - t.Catalog.Clock.TotalHours;
-                return (t.Piece.PerBundle > 0 && t.Piece.CoinsGiven == expected && wallet == expected && vanish is > 0 and <= LuckySlime.VanishHours,
+                // At least: the eating pens' lucky slime pays into the same wallet.
+                return (t.Piece.PerBundle > 0 && t.Piece.CoinsGiven == expected && wallet >= expected && vanish is > 0 and <= LuckySlime.VanishHours,
                     $"{t.LastLine}; {t.Piece.CoinsGiven} coins into the wallet, vanishes in {vanish * 60:F1} game min");
             },
         };
