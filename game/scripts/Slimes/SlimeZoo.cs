@@ -26,7 +26,7 @@ namespace OpenRanch.Game.Slimes;
 /// </summary>
 public partial class SlimeZoo : Node3D
 {
-    private const double RefeedSeconds = 60;
+    private const double RefeedSeconds = 60, EveningHour = 20;
     private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TrialWallThickness = 1f, TimeoutSeconds = 300;
     private const string FormingSlime = "PINK_SLIME", FirstPlort = "ROCK_PLORT", ThirdPlort = "TABBY_PLORT";
 
@@ -116,6 +116,13 @@ public partial class SlimeZoo : Node3D
     private void Build()
     {
         _builtAt = _time;
+        // Evening: night-only slimes (phosphors and their largos) last until dawn, so the eating pens
+        // can check them; the phosphor trial moves the clock to dawn itself. openranch's test set-up.
+        if (WorldTime is { } world)
+        {
+            world.Set(OpenRanch.Ranch.WorldClock.At(world.Clock.Day, EveningHour));
+            Catalog.Clock.Set(world.Ranch.WorldTime / OpenRanch.Ranch.WorldClock.SecondsPerHour); // at once, before any slime looks
+        }
         var slimes = Runs("eat")
             ? Catalog.Slimes.Slimes
                 .Where(s => s.Eating is not null && Catalog.Prefabs.Has(s.Id) && Catalog.Species(s.Id) is not null)

@@ -53,11 +53,23 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
             Fail($"{_slimeId} has no {typeof(T).Name}");
             return;
         }
-        Piece = piece;
-        Piece.Fired += (_, line) => (LastLine, FiredAt) = (line, Time);
-        Slime.Transformed += (_, into) => Notes["became"] = into.Id;
+        Follow(Slime, piece);
         Setup?.Invoke(this);
         Outcome = $"waiting for {typeof(T).Name}";
+    }
+
+    // Watches the slime's piece; if the slime turns into a largo that has the same ability (largos carry
+    // both parents' components), the trial follows the largo.
+    private void Follow(SlimeActor slime, T piece)
+    {
+        (Slime, Piece) = (slime, piece);
+        piece.Fired += (_, line) => (LastLine, FiredAt) = (line, Time);
+        slime.Transformed += (_, into) =>
+        {
+            Notes["became"] = into.Id;
+            if (into.Behaviour<T>() is { } next)
+                Follow(into, next);
+        };
     }
 
     public override void Step(double delta)
