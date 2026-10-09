@@ -14,6 +14,25 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 ## Board (coordinator keeps this current; a new coordinator starts here)
 
+**Full goal:** all of Slime Rancher playable 1:1 from start to finish, running from the user's own install.
+
+Milestones, weighted by size (out of 100). Progress = the sum of finished weight. Report to Control at every 10%
+(row in D:\Local Projects\Master\PROGRESS.md).
+
+| M | Milestone | Weight | Done | State |
+|---|---|---|---|---|
+| M0 | Foundation: Unity readers, importer, v12 save reader | 5 | 5 | done |
+| M1 | Walk The Ranch: world, collision, zone lighting | 8 | 7 | works; the clean-room look redo is still open |
+| M2 | Core loop: slimes eat and make plorts, vacpack, corrals, plort market | 8 | 7 | 3 slime types; tabby pounce and plort lifetime open |
+| M3 | Ranch save: full load, save back, running day cycle | 6 | 3 | loading merged; plots, save back and day cycle running |
+| M4 | Every zone walkable: Dry Reef, Indigo Quarry, Moss Blanket, Ancient Ruins, Glass Desert, Wilds, secret areas, teleporters | 18 | 0 | next |
+| M5 | Every slime, largo, gordo and tarr; feral; food, crops and chickens growing | 15 | 0 | |
+| M6 | Ranch economy: building and upgrading plots, expansions, Lab (refinery, fabricator, gadgets), Exchange, 7Zee | 15 | 0 | |
+| M7 | Game flow and UI: menus, HUD, vacpack UI, Slimepedia, mail, options, save slots | 10 | 0 | |
+| M8 | Sound and look: music, sound effects, clean-room landscape, foliage, water and sky | 8 | 1 | sound and text readers done |
+| M9 | Story and completion: Ogden, Mochi, Viktor, Slimeulations, achievements, ending | 7 | 0 | |
+| | **Total** | **100** | **23** | |
+
 Main: 06b66c5 (2026-10-08), M0-M2 done, M3 loading merged (`--m3-check` PASS on Game2_4, collision 40/40,
 tests 105/105). M3 is done when a save loads fully and the live ranch saves back.
 
