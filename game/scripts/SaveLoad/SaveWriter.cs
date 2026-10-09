@@ -31,7 +31,6 @@ public partial class SaveWriter : Node
     private readonly GameEnums _names;
     private readonly string? _outPath;
     private readonly bool _quitAfterWrite;
-    private readonly double _startHours;
     private readonly int _hunger, _agitation;
     private int _earned;
     private double _time;
@@ -45,7 +44,6 @@ public partial class SaveWriter : Node
         _names = new GameEnums(install);
         _outPath = outPath;
         _quitAfterWrite = quitAfterWrite;
-        _startHours = m2.Clock.TotalHours;
         _hunger = _names.Value(GameEnum.Emotion, "HUNGER");
         _agitation = _names.Value(GameEnum.Emotion, "AGITATION");
 
@@ -120,8 +118,8 @@ public partial class SaveWriter : Node
         {
             Money = _m2.Wallet.Coins,
             MoneyEarned = _earned,
-            // The world clock runs in game hours from the save's time (WorldClock: 3600 game seconds an hour).
-            WorldTime = ranch.WorldTime + (_m2.Clock.TotalHours - _startHours) * WorldClock.SecondsPerHour,
+            // The world clock (World/WorldTime.cs) moves the loaded ranch's world time itself.
+            WorldTime = ranch.WorldTime,
             // Plots stand as loaded: nothing in the world builds or upgrades them yet.
             Plots = _saved.Plots.ToDictionary(p => p.Site.Id, p => new LivePlot(p.Plot.Type, p.Plot.Upgrades)),
             TrackedActorIds = tracked,

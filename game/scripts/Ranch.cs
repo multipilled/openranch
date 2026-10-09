@@ -114,8 +114,11 @@ public partial class Ranch : Node3D
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
                 AddChild(new SaveLoad.M3Check(saved, zone, m2, install));
         }
-        AddChild(WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
-            ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args));
+        var worldTime = WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
+            ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args);
+        AddChild(worldTime);
+        // One clock: milestone 2's game time (hunger, plorts, market days) follows the world clock.
+        m2?.Follow(worldTime);
     }
 
     private void ShowMessage(string text)

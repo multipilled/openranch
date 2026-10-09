@@ -219,6 +219,11 @@ public partial class M3Check : Node
         // Money.
         Check(_m2.Wallet.Coins == ranch.Player.Money, $"money: wallet {_m2.Wallet.Coins}, save {ranch.Player.Money}");
 
+        // One clock: milestone 2's game time is the world clock's.
+        var worldHours = ranch.WorldTime / WorldClock.SecondsPerHour;
+        Check(System.Math.Abs(_m2.Clock.TotalHours - worldHours) < 1e-4 && _m2.Clock.Day == ranch.Clock.Day - 1 && _m2.Market.Day == _m2.Clock.Day,
+            $"game clock: {_m2.Clock.TotalHours:F4} h, day {_m2.Clock.Day + 1}, market day {_m2.Market.Day + 1}; world clock {worldHours:F4} h ({ranch.Clock})");
+
         report.Append(passed ? "m3-check PASS" : "m3-check FAIL");
         return (passed, report.ToString());
     }

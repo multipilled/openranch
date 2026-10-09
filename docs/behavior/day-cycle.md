@@ -44,6 +44,11 @@ not drawn yet). Testing options: `--hour H` starts at hour H of the starting day
 the clock X times faster, and `--day-check` checks the start time, the pace (normal and 60 times faster),
 the lighting at four hours and the timed objects, then quits.
 
+Everything else that runs on game time follows this one clock: slimes' hunger and digestion, plort
+timing and the plort market's days take their game hours from the world time, so `--day-speed` and
+sleeping speed them up too, and the market's day is the clock's day (`M2World.Follow`; `--m3-check`
+compares the two clocks).
+
 ## Parts of the day
 
 The clock's icon splits the day into four parts (code-only, from static analysis of the time
