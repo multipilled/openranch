@@ -26,6 +26,7 @@ namespace OpenRanch.Game;
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
 ///   --hour H, --day-speed X, --day-check   the world clock, see World/WorldTime.cs
+///   --sleep-check                   sleep through the ranch house's door and check the clock, see Home/RanchHouse.cs
 /// </summary>
 public partial class Ranch : Node3D
 {
@@ -127,6 +128,9 @@ public partial class Ranch : Node3D
         AddChild(worldTime);
         // One clock: milestone 2's game time (hunger, plorts, market days) follows the world clock.
         m2?.Follow(worldTime);
+        // The ranch house's door: sleeping until morning (Home/RanchHouse.cs).
+        if (m2 is not null && Home.RanchHouse.Create(m2.Scripts, zoneName, player, worldTime, m2, args) is { } house)
+            AddChild(house);
     }
 
     private void ShowMessage(string text)

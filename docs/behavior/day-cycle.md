@@ -72,8 +72,18 @@ lighting has its own blend, described in day-and-night.md.
 - The world keeps running while the clock runs fast: slimes get hungry, crops grow, timers fire.
   Nothing about sleeping is saved; a save holds only the world time.
 
-Checked: static analysis of the ranch house's sleep button and the time director (code-only).
-openranch's `DayCycle` does the same and is unit tested.
+- The player is held still while sleeping.
+- The way in is the ranch house's door: an object in the world scene with a UI activator whose
+  screen is the ranch house's. The player uses it by looking at it (a ray from the middle of the
+  view, as long as the player rig's `interactDistance`, 3 m in the install) and pressing the
+  interact button; it acts when the button is released. The ranch house screen then offers sleeping.
+
+Checked: static analysis of the ranch house's sleep button, the time director, the player lock and
+the UI detector (code-only); the door, its screen and the reach are read from the install.
+openranch's `DayCycle` does the same and is unit tested. openranch has no ranch house screen yet:
+using the door (E) sleeps at once (`game/scripts/Home/RanchHouse.cs`). `--hour 20 --sleep-check`
+stands the player at the door, uses it and checks the wake-up time, the pace and that the slimes'
+clock slept along.
 
 ## Ranch areas the player is away from
 
@@ -87,6 +97,8 @@ Checked: the stored times read from the development PC's saves. How the catch-up
 is not modelled yet.
 
 ## Not modelled yet
+
+- The ranch house screen (sleeping, and what else it offers) and the original's save on sleeping.
 
 - Death costs time: the clock jumps forward by a number of game hours, or to the dawn after the next
   dusk, as the game mode's settings say, and always by at least 390 game seconds.
