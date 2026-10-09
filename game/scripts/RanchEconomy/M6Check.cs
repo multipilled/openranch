@@ -26,6 +26,7 @@ public partial class M6Check : Node
     private readonly string[] _args;
     private readonly StringBuilder _report = new("m6-check:\n");
     private bool _passed = true;
+    private readonly string? _log;
     private ProduceCheck? _produce;
 
     public M6Check(Economy economy, string[] args)
@@ -33,6 +34,11 @@ public partial class M6Check : Node
         Name = "M6Check";
         _economy = economy;
         _args = args;
+        // --m6-log FILE: each line also goes to FILE as it happens, so a run that stalls shows how far it got.
+        var i = Array.IndexOf(args, "--m6-log");
+        _log = i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+        if (_log is not null)
+            System.IO.File.WriteAllText(_log, "");
         // Menus pause the game; the check goes on.
         ProcessMode = ProcessModeEnum.Always;
     }
@@ -40,10 +46,18 @@ public partial class M6Check : Node
     public void Check(bool ok, string what)
     {
         _passed &= ok;
-        _report.AppendLine($"  {(ok ? "ok  " : "FAIL")} {what}");
+        Line($"  {(ok ? "ok  " : "FAIL")} {what}");
     }
 
-    public void Info(string what) => _report.AppendLine($"  info {what}");
+    public void Info(string what) => Line($"  info {what}");
+
+    private void Line(string line)
+    {
+        _report.AppendLine(line);
+        if (_log is not null)
+            System.IO.File.AppendAllText(_log, $"{Time.GetTicksMsec() / 1000.0,8:F1}s {line}
+");
+    }
 
     public override void _Ready() => Callable.From(() => { _ = Run(); }).CallDeferred();
 
@@ -56,7 +70,9 @@ public partial class M6Check : Node
             await Expansion();
             _produce = new ProduceCheck(this, _economy);
             await _produce.Run();
+            Info($"machines, at {_economy.Clock.Clock}");
             await new MachinesCheck(this, _economy).Run(CorralSite, _produce.GardenSite);
+            Info($"sleep, at {_economy.Clock.Clock}; {_economy.M2.Catalog.Live.Count()} actors live");
             await Sleep();
         }
         catch (Exception e)
