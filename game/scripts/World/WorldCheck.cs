@@ -39,6 +39,7 @@ public partial class WorldCheck : Node
     private readonly N.Vector3 _end;
     private readonly bool _walk;
     private readonly string? _groundMap;
+    private readonly bool _listCells;
     private int _leg;
     private double _legTime, _stuckTime, _jetTime, _time;
     private int _loads, _unloads, _ambienceChanges;
@@ -64,9 +65,10 @@ public partial class WorldCheck : Node
         _args = args;
         _walk = Array.IndexOf(args, "--world-check") >= 0;
         _groundMap = Arg("--ground-map");
+        _listCells = Array.IndexOf(args, "--list-cells") >= 0;
         _end = Arg("--walk-to") is { } end && end.Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture)).ToArray() is { Length: 3 } e
             ? new N.Vector3(e[0], e[1], e[2]) : DefaultEnd;
-        if (!_walk && _groundMap is null)
+        if (!_walk && _groundMap is null && !_listCells)
         {
             SetPhysicsProcess(false);
             return;
@@ -113,15 +115,21 @@ public partial class WorldCheck : Node
         {
             if (--_settleFrames > 0)
                 return;
-            if (_groundMap is not null)
+            if (_listCells)
+                PrintCells();
+            if (_groundMap is not null || !_walk)
             {
-                PrintGroundMap(_groundMap);
+                if (_groundMap is not null)
+                    PrintGroundMap(_groundMap);
                 GetTree().Quit();
                 return;
             }
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var from = Unity(_player.GlobalPosition);
-            var route = RoutePlanner.Plan(_player.GetWorld3D().DirectSpaceState, _player.GetRid(), from, _end, 120, 2,
+            var shape = (CapsuleShape3D)_player.GetChildren().OfType<CollisionShape3D>().First().Shape;
+            GD.Print($"world-check: planning with the player capsule, radius {shape.Radius} m, height {shape.Height} m");
+            var route = RoutePlanner.Plan(_player.GetWorld3D().DirectSpaceState, _player.GetRid(),
+                shape, from, _end, 170, 2,
                 Mathf.Cos(_player.FloorMaxAngle), _map.MergedSet(_map.CurrentSet).KillVolumes);
             if (route is null)
             {
@@ -249,8 +257,17 @@ public partial class WorldCheck : Node
         var climb = waypoint.Y - here.Y > 1.2f && distance < 6;
         if ((_stuckTime > 0.4 || climb) && _jetTime <= 0)
         {
-            _jetTime = 1.6;
-            Log($"{(climb ? "climbing" : "blocked")} {distance:F0} m before waypoint {_leg + 1} of {_path.Count}: jetpack");
+            // Long enough to rise above the waypoint at the jetpack's top speed, from a full tank: on the ground, wait for
+            // the energy first (Player/PlayerController.cs).
+            var rise = Math.Max(waypoint.Y - here.Y, 3) + 2;
+            var seconds = Math.Min(0.4 + rise / _player.JetpackMaxRise, _player.MaxEnergy / _player.EnergyUsePerSecond);
+            if (_player.IsOnFloor() && _player.Energy < seconds * _player.EnergyUsePerSecond)
+            {
+                Input.ActionRelease("move_forward");
+                return;
+            }
+            _jetTime = seconds;
+            Log($"{(climb ? "climbing" : "blocked")} {distance:F0} m before waypoint {_leg + 1} of {_path.Count}: jetpack for {seconds:F1} s");
         }
         if (_jetTime > 0)
         {
@@ -305,6 +322,21 @@ public partial class WorldCheck : Node
                  $"memory {System.Diagnostics.Process.GetCurrentProcess().PrivateMemorySize64 / 1048576} MB private, " +
                  $"{GC.GetTotalMemory(false) / 1048576} MB managed -> {(_passed ? "PASS" : "FAIL")}");
         GetTree().Quit(_passed ? 0 : 1);
+    }
+
+    // Every cell of the live set (ambience zone, box min and max) and every teleport destination and source, in Unity terms.
+    private void PrintCells()
+    {
+        foreach (var c in _map.CellsOf(_map.CurrentSet))
+        {
+            var (lo, hi) = (c.Center - c.Extent, c.Center + c.Extent);
+            GD.Print($"cell {c.Path} ambience {c.AmbianceZone} box ({lo.X:F0}, {lo.Y:F0}, {lo.Z:F0}) .. ({hi.X:F0}, {hi.Y:F0}, {hi.Z:F0})");
+        }
+        foreach (var (p, set) in _map.Destinations)
+            GD.Print($"destination {p.Name} set {set} at ({p.World.Translation.X:F1}, {p.World.Translation.Y:F1}, {p.World.Translation.Z:F1}) {p.Path}");
+        foreach (var s in _map.Sources)
+            GD.Print($"source to {s.Destination} at ({s.Trigger.World.Translation.X:F1}, {s.Trigger.World.Translation.Y:F1}, {s.Trigger.World.Translation.Z:F1}) " +
+                     $"open {_map.Network.IsLinkFullyActive(s)} {s.Path}");
     }
 
     // Ground heights on a grid (rays straight down), with every cell of the live set loaded: '.' no ground, '~' kill

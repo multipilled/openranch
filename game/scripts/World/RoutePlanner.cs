@@ -11,19 +11,31 @@ namespace OpenRanch.Game.World;
 /// Finds a way on foot (and jetpack) between two points of the built world, for scripted checks (World/WorldCheck.cs).
 /// Rays straight down on a grid find every floor of each column (caves and tunnels under hills included); a floor is
 /// one the player can stand on (not steeper than the rig's slope limit, room for the body above it, not in a kill
-/// volume). A* then joins neighbouring floors that are a step up, a jetpack climb up, or a drop down, with no wall
-/// across. Unity coordinates in and out. The limits below are openranch's test settings, not game values.
+/// volume). A* then joins neighbouring floors that are a step up, a jetpack climb up, or a drop down, where the player's
+/// own capsule can rise above the higher floor and move across without touching anything. Unity coordinates in and out.
+/// The limits below are openranch's test settings, not game values.
 /// </summary>
 public static class RoutePlanner
 {
     private const float Headroom = 2.2f;
-    private const float JetpackClimb = 7f;
+    private const float JetpackClimb = 12f;
     private const float MaxDrop = 14f;
     private const int MaxFloors = 12;
+    // How far above a floor the capsule's bottom moves: over the bumps and seams between grid points that the body
+    // slides over on foot or clears with a short jetpack burst.
+    private const float Lift = 1.0f;
 
-    public static List<N.Vector3>? Plan(PhysicsDirectSpaceState3D space, Rid exclude, N.Vector3 from, N.Vector3 to, float margin, float step,
-        float minFloorNormalY, IReadOnlyList<TriggerVolume> kills)
+    public static List<N.Vector3>? Plan(PhysicsDirectSpaceState3D space, Rid exclude, CapsuleShape3D body, N.Vector3 from, N.Vector3 to,
+        float margin, float step, float minFloorNormalY, IReadOnlyList<TriggerVolume> kills)
     {
+        var sweep = new PhysicsShapeQueryParameters3D { Shape = body, Exclude = new Godot.Collections.Array<Rid> { exclude } };
+        // Whether the capsule, its bottom at a (Godot), moves to b without touching anything.
+        bool Clear(Vector3 a, Vector3 b)
+        {
+            sweep.Transform = new Transform3D(Basis.Identity, a + new Vector3(0, body.Height / 2, 0));
+            sweep.Motion = b - a;
+            return space.CastMotion(sweep)[0] >= 1;
+        }
         var minX = Math.Min(from.X, to.X) - margin;
         var minZ = Math.Min(from.Z, to.Z) - margin;
         var nx = (int)((Math.Max(from.X, to.X) + margin - minX) / step) + 1;
@@ -101,8 +113,12 @@ public static class RoutePlanner
         var cost = new Dictionary<(int, int, int), float> { [start] = 0 };
         var came = new Dictionary<(int, int, int), (int, int, int)>();
         open.Enqueue(start, 0);
+        var closest = start;
+        var closestD = float.MaxValue;
         while (open.TryDequeue(out var node, out _))
         {
+            if (N.Vector3.Distance(Point(node), goalPoint) is var left && left < closestD)
+                (closest, closestD) = (node, left);
             if (node == goal)
             {
                 var path = new List<N.Vector3> { Point(node) };
@@ -146,18 +162,37 @@ public static class RoutePlanner
                         var total = g + edge;
                         if (cost.TryGetValue(next, out var known) && known <= total)
                             continue;
-                        // No wall across: a ray at chest height between the two floors.
-                        var a = new Vector3(here.X, Math.Max(here.Y, there.Y) + 1.2f, -here.Z);
-                        var b = new Vector3(there.X, Math.Max(here.Y, there.Y) + 1.2f, -there.Z);
-                        var wall = PhysicsRayQueryParameters3D.Create(a, b);
-                        wall.Exclude = exclusions;
-                        if (space.IntersectRay(wall).Count > 0)
+                        // Room to rise above the higher floor (a jetpack climb), then to move across to the other column.
+                        var above = Math.Max(here.Y, there.Y) + Lift;
+                        var lifted = new Vector3(here.X, above, -here.Z);
+                        if (rise > 0 && !Clear(new Vector3(here.X, here.Y + Lift, -here.Z), lifted))
+                            continue;
+                        if (!Clear(lifted, new Vector3(there.X, above, -there.Z)))
                             continue;
                         cost[next] = total;
                         came[next] = node;
                         open.Enqueue(next, total + N.Vector3.Distance(there, goalPoint));
                     }
                 }
+        }
+        var c = Point(closest);
+        GD.Print($"route: {cost.Count} floors reached from ({Point(start).X:F0}, {Point(start).Y:F0}, {Point(start).Z:F0}); " +
+                 $"closest to the goal ({goalPoint.X:F0}, {goalPoint.Y:F0}, {goalPoint.Z:F0}) was ({c.X:F0}, {c.Y:F0}, {c.Z:F0}), {closestD:F0} m away");
+        // Where the search got to, 3 x 3 columns per letter: 'o' reached, '-' floors not reached, ' ' no floor.
+        GD.Print($"route: reached map, x {minX:F0} at the left, z {minZ + (nz - 1) * step:F0} at the top, {3 * step} m per letter");
+        var reached = cost.Keys.Select(k => (k.Item1 / 3, k.Item2 / 3)).ToHashSet();
+        for (var bz = (nz - 1) / 3; bz >= 0; bz--)
+        {
+            var row = new System.Text.StringBuilder($"route: {minZ + bz * 3 * step,6:F0} ");
+            for (var bx = 0; bx <= (nx - 1) / 3; bx++)
+            {
+                var any = false;
+                for (var ix = bx * 3; ix < Math.Min(nx, bx * 3 + 3); ix++)
+                    for (var iz = bz * 3; iz < Math.Min(nz, bz * 3 + 3); iz++)
+                        any |= floors[ix * nz + iz].Length > 0;
+                row.Append(reached.Contains((bx, bz)) ? 'o' : any ? '-' : ' ');
+            }
+            GD.Print(row.ToString());
         }
         return null;
     }
