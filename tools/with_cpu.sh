@@ -10,6 +10,10 @@
 # Stale slots (holder gone for > 40 min) are reclaimed. If a job of yours hangs, release only its own
 # slot dir (check its owner file first).
 SLOTS=${CPU_SLOTS:-4}
+# Refuse the stdin pattern up front (a `-` script argument), before it can take and hang a slot.
+for a in "$@"; do
+  if [ "$a" = "-" ]; then echo "with_cpu: refusing '$*': stdin never reaches a backgrounded job; write the script to a file" >&2; exit 2; fi
+done
 DIR=${CPU_SLOT_DIR:-$HOME/.claude/cpu-slots}
 mkdir -p "$DIR"
 owner="$1"; shift
