@@ -41,6 +41,29 @@ public class RanchWriterTests
     }
 
     [Fact]
+    public void Clocks_of_produce_hens_and_crops_come_from_the_world()
+    {
+        var loaded = Loaded();
+        var first = loaded.Actors[0];
+        var live = new LiveRanch
+        {
+            Money = loaded.Player.Money,
+            WorldTime = loaded.WorldTime,
+            TrackedActorIds = loaded.Actors.Select(a => a.ActorId).ToHashSet(),
+            Actors = loaded.Actors.Select(a => new LiveActor(a.ActorId, a.TypeId, a.Position, a.Rotation, a.Emotions,
+                a == first ? new ActorTimers(CycleState: 1, CycleProgressTime: 5000, ReproduceTime: 6000) : null)).ToList(),
+            ResourceSpawners = [new CropTimes(new Vec3(1, 2, 3), 7000, 1.5f)],
+        };
+        var written = RanchWriter.Merge(loaded, live);
+        var actor = written.Actors.Single(a => a.ActorId == first.ActorId);
+        Assert.Equal((1, 5000.0, 6000.0, first.TransformTime), (actor.CycleState, actor.CycleProgressTime, actor.ReproduceTime, actor.TransformTime));
+        Assert.Equal([new CropTimes(new Vec3(1, 2, 3), 7000, 1.5f)], written.World.ResourceSpawners);
+        // Without clocks from the world, the saved ones stay.
+        var unchanged = RanchWriter.Merge(loaded, Unchanged(loaded));
+        Assert.Equal(loaded.World.ResourceSpawners, unchanged.World.ResourceSpawners);
+    }
+
+    [Fact]
     public void Merge_leaves_the_loaded_ranch_alone()
     {
         var loaded = Loaded();
