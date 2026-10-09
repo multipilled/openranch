@@ -20,16 +20,23 @@ an empty slot free; otherwise into the first empty slot. A plot keeps its stores
 ## Silo catchers
 
 A silo catcher (`SiloCatcher`, a trigger box) takes a vacuumable item thrown in, when nothing holds
-it, into its own slot (`slotIdx`) of the store above it, and the item is used up. The silo's storage
-upgrades switch more catchers on. The corral's feeder hopper is a catcher of the feeder's food store.
+it, into one slot of the store above it, and the item is used up. The corral's feeder hopper and its
+plort collector's outlets are catchers too.
+
+The silo's store has 12 slots of 300. Each of its 4 catchers has a button (`SiloStorageActivator`)
+that cycles it through 3 slots (0/4/8, 1/5/9, 2/6/10, 3/7/11); the plot keeps each button's choice
+(`Plot.SiloSlotSelections`), 0 when new. The storage upgrades switch more catchers on (one to start).
+
+A vacpack pulling at a catcher's front (within 45 degrees) gets one item of the catcher's slot every
+quarter second, put 1.2 m out towards it (the original speeds this up while held; not modelled).
 
 ## Auto-feeder (corral)
 
 Every cycle the feeder (`SlimeFeeder`) queues `itemsPerFeeding` drops (6). A cycle lasts 6 game hours
 at normal speed, 9 slow, 3 fast (the game's code: `hoursByFeedSpeed` is a dictionary, which Unity
 doesn't save). A feeder switched on feeds one cycle later. Queued drops come out one every half
-second from the first slot of its food store, pushed out of the feeder's front; a drop with the store
-empty is used up all the same. The plot keeps the next feeding time, the queued drops and the speed.
+second from the first slot of its food store, pushed out of the feeder's front; with the store
+empty the queue runs down one drop a frame. The plot keeps the next feeding time, the queued drops and the speed.
 
 ## Plort collector (corral)
 
@@ -52,7 +59,6 @@ the hopper, waits for the drops and a sweep, fills a silo and burns a carrot.
 
 ## Not modelled yet
 
-- Taking items out of a silo with the vacpack (`SiloActivator`, `SiloCatcher.OnTriggerStay`) and the
-  silo's slot buttons.
+- Pressing the silo's slot buttons (the saved choices are used); the speed-up of giving items out.
 - The feeder speed button; the coop's feeder (its `FeederRegion` speeds chicks up).
 - Drones and other gadgets using stores.
