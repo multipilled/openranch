@@ -9,6 +9,29 @@ You need a legal copy of Slime Rancher (the Steam release, 1.4.x) to use openran
 
 openranch is not affiliated with or endorsed by Monomi Park.
 
+![Every slime, largo and gordo type loaded from the game's own files, on The Ranch](docs/images/slime-gallery.jpg)
+
+![The Dry Reef, streamed into one joined world](docs/images/dry-reef.jpg)
+
+## Roadmap
+
+The goal is all of Slime Rancher playable 1:1 from your own install. Milestones are weighted by size; overall **54%**.
+
+| | Milestone | Weight | Done |
+|---|---|---|---|
+| M0 | Foundation: Unity readers, importer, v12 save reader | 5 | 100% |
+| M1 | Walk The Ranch: world, collision, zone lighting | 8 | 88% |
+| M2 | Core loop: slimes eat and make plorts, vacpack, corrals, plort market | 8 | 88% |
+| M3 | Ranch save: full load, save back, running day cycle | 6 | 100% |
+| M4 | Every zone walkable, streamed as one world, teleporters | 18 | 67% |
+| M5 | Every slime, largo, gordo and tarr; feral; food, crops and chickens | 15 | 67% |
+| M6 | Ranch economy: plots and upgrades, expansions, Lab, Exchange, 7Zee | 15 | 40% |
+| M7 | Game flow and UI: menus, HUD, vacpack UI, Slimepedia, mail, options, save slots | 10 | 0% |
+| M8 | Sound and look: music, sound effects, clean-room landscape, foliage, water, sky | 8 | 13% |
+| M9 | Story and completion: Ogden, Mochi, Viktor, Slimeulations, achievements, ending | 7 | 0% |
+
+Want to help? See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ## Status
 
 Milestone 0, the foundation, is done:
