@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -70,11 +71,12 @@ public partial class Ranch : Node3D
         TimedObjects timed;
         // Milestone 4: without --zone, every zone of the world scene, its cells loaded around the player (World/WorldMap.cs).
         WorldMap? map = null;
+        var savedPlots = new Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>>();
         if (Arg("--zone") is null)
         {
             worldLighting = new WorldLighting(lighting, ambience, [], [], state.Hour, TimeOfDayLight.Read(assets, scene));
             timed = TimedObjects.Empty(state.Hour);
-            map = WorldMap.Create(install, assets, scene, state, name => SavedPlots(install, assets, saved, Arg("--save"), state, name),
+            map = WorldMap.Create(install, assets, scene, state, name => SavedPlots(install, assets, saved, Arg("--save"), state, name, savedPlots),
                 layers, world, worldLighting, timed);
             map.LoadAll = Array.IndexOf(args, "--load-all") >= 0 || Array.IndexOf(args, "--collision-check") >= 0;
             AddChild(worldLighting);
@@ -146,7 +148,7 @@ public partial class Ranch : Node3D
         }
         worldLighting.Attach(player.Camera);
         if (map is not null)
-            AddChild(new WorldCheck(map, player, worldLighting, args));
+            AddChild(new WorldCheck(map, player, worldLighting, args, saved?.Ranch, savedPlots));
         if (otherZone || map is not null)
             GD.Print($"{zoneName}: ambience zone {worldLighting.OutsideZone} outside caves at the start");
 
@@ -181,11 +183,12 @@ public partial class Ranch : Node3D
 
     // Milestone 4: the save's plots on another zone's sites (SaveLoad/SavedRanch.cs reads one zone's sites at a time).
     private static (WorldState, Func<ZoneExtract, ZoneExtract>)? SavedPlots(GameInstall install, AssetSet assets, SaveLoad.SavedRanch? ranch,
-        string? savePath, WorldState state, string zoneName)
+        string? savePath, WorldState state, string zoneName, Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>> placed)
     {
         if (savePath is null)
             return null;
         var saved = zoneName == "zoneRANCH" && ranch is not null ? ranch : SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName);
+        placed[zoneName] = saved.Plots;
         GD.Print($"World: {zoneName} has {saved.Plots.Count} of the save's plots");
         return (state with { Hidden = saved.State.Hidden }, saved.Apply);
     }

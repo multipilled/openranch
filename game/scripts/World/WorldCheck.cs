@@ -6,6 +6,7 @@ using System.Text;
 using Godot;
 using OpenRanch.Formats.Scene;
 using OpenRanch.Game.Player;
+using OpenRanch.Ranch;
 using N = System.Numerics;
 
 namespace OpenRanch.Game.World;
@@ -18,6 +19,8 @@ namespace OpenRanch.Game.World;
 ///                            cells that load and unload and the ambience zone on the way; then walks into a teleporter
 ///                            (--teleport-via NAME, default SeaMustacheIsland: the Slime Sea's mini island teleporter) and
 ///                            checks the player lands on its destination and stays there; quits with 0 on PASS
+///   --save-check             with --save: where the save's player starts (region set, cells, ambience) and whether every
+///                            plot of the save stands on its site with its saved type, in whichever zone; quits with 0 on PASS
 ///   --ground-map x0,z0,x1,z1,step[,top]   prints the ground height under a rectangle (Unity x, z) after loading every cell, then quits
 /// The route and its end are test input, not game data.
 /// </summary>
@@ -40,6 +43,9 @@ public partial class WorldCheck : Node
     private readonly bool _walk;
     private readonly string? _groundMap;
     private readonly bool _listCells;
+    private readonly bool _saveCheck;
+    private readonly RanchState? _save;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<PlacedPlot>>? _savedPlots;
     private int _leg;
     private double _legTime, _stuckTime, _jetTime, _time;
     private int _loads, _unloads, _ambienceChanges;
@@ -56,8 +62,12 @@ public partial class WorldCheck : Node
 
     private enum Phase { Settle, Plan, Unload, Walk, TeleportApproach, TeleportStay, Done }
 
-    public WorldCheck(WorldMap map, PlayerController player, WorldLighting lighting, string[] args)
+    public WorldCheck(WorldMap map, PlayerController player, WorldLighting lighting, string[] args, RanchState? save = null,
+        IReadOnlyDictionary<string, IReadOnlyList<PlacedPlot>>? savedPlots = null)
     {
+        _save = save;
+        _savedPlots = savedPlots;
+        _saveCheck = Array.IndexOf(args, "--save-check") >= 0;
         Name = "WorldCheck";
         _map = map;
         _player = player;
@@ -68,7 +78,7 @@ public partial class WorldCheck : Node
         _listCells = Array.IndexOf(args, "--list-cells") >= 0;
         _end = Arg("--walk-to") is { } end && end.Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture)).ToArray() is { Length: 3 } e
             ? new N.Vector3(e[0], e[1], e[2]) : DefaultEnd;
-        if (!_walk && _groundMap is null && !_listCells)
+        if (!_walk && _groundMap is null && !_listCells && !_saveCheck)
         {
             SetPhysicsProcess(false);
             return;
@@ -104,6 +114,12 @@ public partial class WorldCheck : Node
         {
             if (--_settleFrames > 0)
                 return;
+            if (_saveCheck)
+            {
+                CheckSave();
+                Finish();
+                return;
+            }
             // Every cell of the set, for the ground map or the route.
             _map.LoadAll = true;
             _map.Restream();
@@ -303,6 +319,45 @@ public partial class WorldCheck : Node
         _legTime = 0;
         Log($"walking into the teleporter at {_teleportSource.Path} (to {name})");
         _phase = Phase.TeleportApproach;
+    }
+
+    // The save's player and plots in the joined world (Ranch.cs builds each zone's plot sites from the save).
+    private void CheckSave()
+    {
+        if (_save is null)
+        {
+            Fail("--save-check needs --save");
+            return;
+        }
+        var at = Unity(_player.GlobalPosition);
+        var saved = _save.Player.Position;
+        var savedAt = new N.Vector3(saved.X, saved.Y, saved.Z);
+        var cells = _map.CellsOf(_map.CurrentSet).Where(c => c.Contains(at)).ToList();
+        Log($"the save's player stood at ({saved.X:F1}, {saved.Y:F1}, {saved.Z:F1}) in set {_map.Sets.NameOf(_save.Player.RegionSetId)}; " +
+            $"starts in {_map.Sets.NameOf(_map.CurrentSet)} in [{string.Join(", ", cells.Select(c => Short(c.Path)))}], " +
+            $"ambience zone {_lighting.OutsideZone}, {N.Vector3.Distance(at, savedAt):F2} m from the saved place");
+        if (_map.CurrentSet != _save.Player.RegionSetId || N.Vector3.Distance(at, savedAt) > 1.5f)
+            Fail("the player didn't start where the save left them");
+
+        // Every plot of the save on its site, with its type, in exactly one zone.
+        var placed = (_savedPlots ?? new Dictionary<string, IReadOnlyList<PlacedPlot>>())
+            .SelectMany(z => z.Value.Select(p => (Zone: z.Key, Plot: p))).ToList();
+        var outside = 0;
+        foreach (var plot in _save.Plots)
+        {
+            var on = placed.Where(p => p.Plot.Site.Id == plot.Id).ToList();
+            if (on.Count != 1 || on[0].Plot.Plot.Type != plot.Type)
+            {
+                Fail($"the save's plot {plot.Id} (type {plot.Type}) stands on {on.Count} sites " +
+                     $"[{string.Join(", ", on.Select(p => $"{p.Zone}: type {p.Plot.Plot.Type}"))}]");
+                continue;
+            }
+            if (on[0].Zone != "zoneRANCH")
+                outside++;
+        }
+        foreach (var zone in placed.GroupBy(p => p.Zone).OrderBy(g => g.Key))
+            Log($"{zone.Key}: {zone.Count()} plot sites, {zone.Count(p => _save.FindPlot(p.Plot.Site.Id) is not null)} with the save's plots");
+        Log($"the save's {_save.Plots.Count} plots: {_save.Plots.Count - outside} on The Ranch, {outside} outside it");
     }
 
     private void Fail(string why)

@@ -12,14 +12,14 @@ namespace OpenRanch.Game.World;
 /// Rays straight down on a grid find every floor of each column (caves and tunnels under hills included); a floor is
 /// one the player can stand on (not steeper than the rig's slope limit, room for the body above it, not in a kill
 /// volume). A* then joins neighbouring floors that are a step up, a jetpack climb up, or a drop down, where the player's
-/// own capsule can rise above the higher floor and move across without touching anything. Unity coordinates in and out.
+/// own capsule can rise above the higher floor, move across and fall to a lower one without touching anything. Unity coordinates in and out.
 /// The limits below are openranch's test settings, not game values.
 /// </summary>
 public static class RoutePlanner
 {
     private const float Headroom = 2.2f;
     private const float JetpackClimb = 12f;
-    private const float MaxDrop = 14f;
+    private const float MaxDrop = 40f;
     private const int MaxFloors = 12;
     // How far above a floor the capsule's bottom moves: over the bumps and seams between grid points that the body
     // slides over on foot or clears with a short jetpack burst.
@@ -167,7 +167,11 @@ public static class RoutePlanner
                         var lifted = new Vector3(here.X, above, -here.Z);
                         if (rise > 0 && !Clear(new Vector3(here.X, here.Y + Lift, -here.Z), lifted))
                             continue;
-                        if (!Clear(lifted, new Vector3(there.X, above, -there.Z)))
+                        var across = new Vector3(there.X, above, -there.Z);
+                        if (!Clear(lifted, across))
+                            continue;
+                        // A drop must fall clear onto the lower floor, not through a roof over it.
+                        if (rise < 0 && !Clear(across, new Vector3(there.X, there.Y + Lift, -there.Z)))
                             continue;
                         cost[next] = total;
                         came[next] = node;
