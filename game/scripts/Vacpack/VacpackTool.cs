@@ -118,8 +118,9 @@ public partial class VacpackTool : Node3D
         {
             if (_time >= _nextShot)
             {
+                var moods = Pack[Pack.SelectedSlot]?.Moods;
                 if (Pack.TakeSelected() is { } id)
-                    ShootOut(id);
+                    ShootOut(id, moods);
                 _nextShot = _time + _tuning.ShootCooldown;
             }
         }
@@ -190,10 +191,11 @@ public partial class VacpackTool : Node3D
                     continue;
                 }
                 var id = item.Id;
+                var moods = item is SlimeActor slime ? Moods(slime) : null;
                 item.Reserve();
                 item.ShrinkTo(CaptureShrinkScale, CaptureShrinkSeconds, () =>
                 {
-                    if (Pack.TryAdd(id))
+                    if (Pack.TryAdd(id, moods))
                         Captured?.Invoke(id);
                     item.Finish();
                 });
@@ -223,7 +225,13 @@ public partial class VacpackTool : Node3D
 
     // A shot item appears just ahead of the nozzle (further out when aiming down) and flies along the
     // nozzle's direction at the eject speed plus the player's own speed.
-    private void ShootOut(string id)
+    /// <summary>The moods a slime takes into the vacpack, by the game's emotion names (only hunger and agitation are modelled).</summary>
+    public static Dictionary<string, float> Moods(SlimeActor slime) => new() { [Hunger] = slime.Sim.Hunger, [Agitation] = slime.Sim.Agitation };
+
+    private const string Hunger = "HUNGER", Agitation = "AGITATION";
+
+    // A slime shot out takes the slot's averaged moods (static analysis of WeaponVacuum's shooting).
+    private void ShootOut(string id, IReadOnlyDictionary<string, float>? moods)
     {
         var dir = GlobalBasis.Y.Normalized();
         var radius = ItemCatalog.Radius(_catalog.Prefabs.Get(id));
@@ -236,6 +244,13 @@ public partial class VacpackTool : Node3D
         item.LinearVelocity = dir * _tuning.EjectSpeed + _player.Velocity;
         item.GrowFrom(ShotStartScale, ShotGrowSeconds);
         item.Launch(_player);
+        if (item is SlimeActor slime && moods is not null)
+        {
+            if (moods.TryGetValue(Hunger, out var hunger))
+                slime.Sim.Hunger = Mathf.Clamp(hunger, 0, 1);
+            if (moods.TryGetValue(Agitation, out var agitation))
+                slime.Sim.Agitation = Mathf.Clamp(agitation, 0, 1);
+        }
         Shot?.Invoke(item);
     }
 }

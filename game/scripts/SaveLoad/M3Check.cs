@@ -219,6 +219,20 @@ public partial class M3Check : Node
         // Money.
         Check(_m2.Wallet.Coins == ranch.Player.Money, $"money: wallet {_m2.Wallet.Coins}, save {ranch.Player.Money}");
 
+        // Vacpack: the slots of normal play hold what the save's player carried, moods and all.
+        var savedSlots = reader.Player.Ammo.GetValueOrDefault(_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)) ?? [];
+        var packWrong = new List<string>();
+        for (var i = 0; i < Simulation.Vacpack.TotalSlots; i++)
+        {
+            var want = i < savedSlots.Count ? PlayerVacpack.Slot(savedSlots[i], _names) : null;
+            var have = _m2.Pack[i];
+            if (want?.Id != have?.Id || want?.Count != have?.Count
+                || (want is not null && have is not null && !want.Moods.OrderBy(m => m.Key).SequenceEqual(have.Moods.OrderBy(m => m.Key))))
+                packWrong.Add($"slot {i + 1}: {Slot(have)}, save {Slot(want)}");
+        }
+        Check(packWrong.Count == 0, $"vacpack: {string.Join(", ", Enumerable.Range(0, Simulation.Vacpack.TotalSlots).Select(i => Slot(_m2.Pack[i])))}; " +
+                                    $"{_m2.Pack.UsableSlots} slots usable, {_m2.Pack.MaxPerSlot} per slot" + string.Concat(packWrong.Select(w => "\n         differs: " + w)));
+
         // One clock: milestone 2's game time is the world clock's.
         var worldHours = ranch.WorldTime / WorldClock.SecondsPerHour;
         Check(System.Math.Abs(_m2.Clock.TotalHours - worldHours) < 1e-4 && _m2.Clock.Day == ranch.Clock.Day - 1 && _m2.Market.Day == _m2.Clock.Day,
@@ -229,6 +243,9 @@ public partial class M3Check : Node
     }
 
     private static N.Vector3 Unity(Vector3 v) => new(v.X, v.Y, -v.Z);
+
+    private static string Slot(Simulation.VacSlot? slot) =>
+        slot is null ? "empty" : $"{slot.Count} {slot.Id}" + (slot.Moods.Count > 0 ? $" ({string.Join(" ", slot.Moods.Select(m => $"{m.Key.ToLowerInvariant()} {m.Value:F2}"))})" : "");
 
     private static Dictionary<string, int> Count(IEnumerable<string> ids) => ids.GroupBy(i => i).ToDictionary(g => g.Key, g => g.Count());
 

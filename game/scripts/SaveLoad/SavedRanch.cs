@@ -147,6 +147,8 @@ public sealed class SavedRanch
     {
         m2.Wallet.Add(Ranch.Player.Money);
         var names = new GameEnums(m2.Scripts.Types);
+        // The vacpack holds what the save's player carried, with the capacity of their upgrades.
+        PlayerVacpack.Load(Ranch.Player, names, m2.Pack);
         LooseActors = ZoneActors.Of(Ranch, Zone, names, Crops, id => GrowsOnCrops(m2, id));
         Callable.From(() => SpawnSlimes(m2)).CallDeferred();
         Callable.From(() => SpawnLoose(m2)).CallDeferred();

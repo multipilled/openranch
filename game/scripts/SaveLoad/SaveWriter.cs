@@ -122,6 +122,8 @@ public partial class SaveWriter : Node
             WorldTime = ranch.WorldTime,
             // Plots stand as loaded: nothing in the world builds or upgrades them yet.
             Plots = _saved.Plots.ToDictionary(p => p.Site.Id, p => new LivePlot(p.Plot.Type, p.Plot.Upgrades)),
+            // The vacpack of normal play; a slime sucked up left the world and is kept here.
+            Ammo = new Dictionary<int, IReadOnlyList<AmmoSlot>> { [_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)] = PlayerVacpack.Save(_m2.Pack, _names) },
             TrackedActorIds = tracked,
             Actors = actors,
         };
