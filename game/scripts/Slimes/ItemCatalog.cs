@@ -52,6 +52,80 @@ public sealed class ItemCatalog
     /// <summary>Raised for every item put into the world.</summary>
     public event Action<Actor>? Spawned;
 
+    /// <summary>The player's body, for slimes that chase, hurt or flee from the player (null: no player around).</summary>
+    public CharacterBody3D? Player { get; set; }
+    /// <summary>The player's health and radiation (a stand-in until openranch has a player health bar).</summary>
+    public PlayerVitals PlayerVitals { get; } = new();
+    /// <summary>
+    /// Whether a point (Godot coordinates) is inside a cave trigger. The world's owner sets it from the
+    /// zone's cave volumes; without it nothing counts as a cave.
+    /// </summary>
+    public Func<Vector3, bool>? InCave { get; set; }
+    /// <summary>
+    /// Whether a point (Godot coordinates) is on The Ranch or in the Wilds, where feral slimes don't
+    /// poof. Without it everything counts as The Ranch (openranch only runs slimes there so far).
+    /// </summary>
+    public Func<Vector3, bool>? OnRanchOrWilds { get; set; }
+    /// <summary>Where lucky slimes' coins go (the world's owner sets it; without one, coins are only counted).</summary>
+    public Wallet? Wallet { get; set; }
+    /// <summary>
+    /// Ash (ash troughs, <c>AshSource</c>/<c>AshSafetyZone</c>) and water (<c>LiquidSource</c>) that fire and
+    /// puddle slimes feed on and stay alive in. The world's owners add them; the slime zoo adds its own.
+    /// </summary>
+    public List<FeedingPatch> Patches { get; } = [];
+
+    /// <summary>
+    /// Whether the player's body (its capsule) overlaps a sphere at <paramref name="center"/> (Godot
+    /// coordinates): how openranch checks the original's trigger spheres against the player (rad auras,
+    /// crystal spikes), so a player moved by a script counts at once.
+    /// </summary>
+    public bool PlayerInSphere(Vector3 center, float radius)
+    {
+        if (Player is not { } player || !GodotObject.IsInstanceValid(player))
+            return false;
+        var capsule = player.GetChildren().OfType<CollisionShape3D>().Select(c => (c, s: c.Shape as CapsuleShape3D)).FirstOrDefault(x => x.s is not null);
+        if (capsule.s is not { } shape)
+            return player.GlobalPosition.DistanceTo(center) <= radius;
+        var mid = capsule.c.GlobalPosition;
+        var half = Math.Max(0f, shape.Height / 2 - shape.Radius);
+        var (a, b) = (mid + Vector3.Down * half, mid + Vector3.Up * half);
+        var ab = b - a;
+        var t = ab.LengthSquared() > 0 ? Math.Clamp((center - a).Dot(ab) / ab.LengthSquared(), 0f, 1f) : 0f;
+        return (a + ab * t).DistanceTo(center) <= radius + shape.Radius;
+    }
+
+    /// <summary>The item id a prefab's <c>Identifiable</c> names (null when it has none).</summary>
+    public string? ItemIdOf(ItemPrefab? prefab) =>
+        prefab?.RootScript("Identifiable")?["id"] is { } id ? Scripts.IdentifiableIds.NameOf(Convert.ToInt64(id)) : null;
+
+    /// <summary>Raised for every explosion (boom slimes, boom gordos, feral stomps).</summary>
+    public event Action<Explosions.Result>? Exploded;
+    internal void ReportExplosion(Explosions.Result result) => Exploded?.Invoke(result);
+
+    private GordoData? _gordos;
+    /// <summary>The install's gordos (the LookupDirector's gordo list).</summary>
+    public GordoData Gordos => _gordos ??= GordoData.Read(Scripts);
+
+    /// <summary>Raised for every gordo put into the world.</summary>
+    public event Action<GordoActor>? GordoSpawned;
+
+    /// <summary>
+    /// Puts a gordo into the world at <paramref name="position"/> (Godot coordinates). <paramref name="placed"/>
+    /// is a gordo as the world scene places it (with its own rewards); otherwise the prefab list's.
+    /// </summary>
+    public GordoActor SpawnGordo(string id, Vector3 position, float yawRadians = 0, GordoInfo? placed = null)
+    {
+        var info = placed ?? Gordos.Get(id) ?? throw new KeyNotFoundException($"No gordo {id}.");
+        var diet = Species(info.Slime) ?? throw new KeyNotFoundException($"{id} eats like {info.Slime}, which has no slime settings.");
+        var gordo = new GordoActor(this, info, Prefabs.Get(id), diet) { Position = position, Rotation = new Vector3(0, yawRadians, 0) };
+        Actors.AddChild(gordo);
+        GordoSpawned?.Invoke(gordo);
+        return gordo;
+    }
+
+    /// <summary>A fresh copy of an item's model (as drawn when spawned).</summary>
+    public Node3D VisualFor(ItemPrefab prefab) => BuildVisual(prefab);
+
     /// <summary>The items in the world that haven't been taken out of the game.</summary>
     public IEnumerable<Actor> Live => Actors.GetChildren().OfType<Actor>().Where(a => !a.Consumed && GodotObject.IsInstanceValid(a));
 
@@ -79,6 +153,14 @@ public sealed class ItemCatalog
         actor.Mass = Math.Max(0.001f, prefab.Body?.Mass ?? 1f);
         actor.LinearDamp = prefab.Body?.Drag ?? 0f;
         actor.AngularDamp = prefab.Body?.AngularDrag ?? 0f;
+        // A kinematic body (a key) stays where it is put; gravity only pulls bodies that use it.
+        if (prefab.Body is { IsKinematic: true })
+        {
+            actor.FreezeMode = RigidBody3D.FreezeModeEnum.Kinematic;
+            actor.Freeze = true;
+        }
+        if (prefab.Body is { UseGravity: false })
+            actor.GravityScale = 0;
         actor.Vacuumable = prefab.RootScript("Vacuumable") is not null && prefab.VacuumSize == 0;
         actor.Radius = Radius(prefab);
         if (prefab.RootScript("KeepUpright") is { } upright)
@@ -158,7 +240,9 @@ public sealed class ItemCatalog
         if (!_visuals.TryGetValue(prefab.Id, out var template))
         {
             template = new Node3D { Name = "Visual" };
-            foreach (var part in prefab.Meshes)
+            // Objects with HideOnStart switch their renderer off at once (a gordo's full-size outline).
+            var hidden = prefab.Scripts.Where(s => s.Class == "HideOnStart").Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
+            foreach (var part in prefab.Meshes.Where(m => !hidden.Contains(m.Path)))
             {
                 var subMeshes = World.Mesh(part.Mesh).SubMeshes.Count;
                 for (var s = 0; s < subMeshes; s++)

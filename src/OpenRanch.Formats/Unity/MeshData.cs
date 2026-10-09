@@ -27,6 +27,11 @@ public sealed class MeshData
     public required Vector3 BoundsCenter { get; init; }
     public required Vector3 BoundsExtent { get; init; }
     public required int BindPoseCount { get; init; }
+    /// <summary>
+    /// Each bone's bind pose (mesh space to the bone's space), stored by Unity as e00, e01, ... e33 with
+    /// eRC = row R, column C; here as System.Numerics matrices (row vectors), i.e. transposed.
+    /// </summary>
+    public IReadOnlyList<System.Numerics.Matrix4x4> BindPoses { get; init; } = [];
 
     public static MeshData Read(EndianReader r)
     {
@@ -44,7 +49,19 @@ public sealed class MeshData
         r.ReadArray(x => { x.ReadAlignedString(); x.Skip(12); return 0; });
         r.ReadArray(x => x.ReadSingle());
 
-        var bindPoses = r.ReadArray(x => { x.Skip(64); return 0; }).Count;
+        var bindPoseList = r.ReadArray(x =>
+        {
+            var e = new float[16];
+            for (var i = 0; i < 16; i++)
+                e[i] = x.ReadSingle();
+            // e[R * 4 + C] is Unity's row R, column C; numerics wants its transpose.
+            return new System.Numerics.Matrix4x4(
+                e[0], e[4], e[8], e[12],
+                e[1], e[5], e[9], e[13],
+                e[2], e[6], e[10], e[14],
+                e[3], e[7], e[11], e[15]);
+        });
+        var bindPoses = bindPoseList.Count;
         r.ReadArray(x => x.ReadUInt32()); // bone name hashes
         r.ReadUInt32(); // root bone name hash
         r.ReadArray(x => { x.Skip(24); return 0; }); // bone bounds
@@ -80,6 +97,7 @@ public sealed class MeshData
             Name = name, SubMeshes = subMeshes, MeshCompression = compression, IndexFormat = indexFormat,
             IndexBuffer = indexBuffer, VertexCount = vertexCount, Channels = channels, VertexData = vertexData,
             Stream = stream, BoundsCenter = center, BoundsExtent = extent, BindPoseCount = bindPoses,
+            BindPoses = bindPoseList,
         };
     }
 

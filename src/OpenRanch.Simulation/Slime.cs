@@ -42,12 +42,18 @@ public sealed class Slime
     public bool IsStarving => Hunger >= StarvingCutoff;
     public bool IsAngry => Agitation >= AngryCutoff;
 
-    /// <summary>Hungry enough to go looking for food.</summary>
-    public bool WantsToEat => Species.Foods.Count > 0 && Hunger > Species.Eating.MinDriveToEat;
+    /// <summary>
+    /// Feral (docs/behavior/feral-slimes.md): it eats anything in its diet that touches it, however
+    /// full or calm it is (static analysis of SlimeEat).
+    /// </summary>
+    public bool IsFeral { get; set; }
+
+    /// <summary>Hungry enough to go looking for food (always, when feral).</summary>
+    public bool WantsToEat => IsFeral || (Species.Foods.Count > 0 && Hunger > Species.Eating.MinDriveToEat);
 
     /// <summary>Whether the slime would eat <paramref name="food"/> right now.</summary>
     public bool WillEat(string food) =>
-        Species.FoodEffect(food) is { } effect && Drive(effect) >= Species.Eating.MinDriveToEat;
+        Species.FoodEffect(food) is { } effect && (IsFeral || Drive(effect) >= Species.Eating.MinDriveToEat);
 
     /// <summary>
     /// How much the slime wants a food right now: the food's feeling (hunger, agitation, or 1 for
@@ -89,11 +95,12 @@ public sealed class Slime
     /// Feeds the slime. Returns <see cref="Meal.None"/> if it won't eat that now; otherwise the items
     /// it produces after <see cref="DigestSeconds"/>. <paramref name="swallowed"/> is false when the bite
     /// only hurt the food (a slime with health left, bitten by a tarr): the bite still counts for hunger
-    /// and agitation, but nothing comes out (static analysis of SlimeEat).
+    /// and agitation, but nothing comes out (static analysis of SlimeEat). <paramref name="ignoreMood"/>
+    /// feeds it anything in its diet however full or calm (a chomp that ignores emotions).
     /// </summary>
-    public Meal Feed(string food, bool swallowed = true)
+    public Meal Feed(string food, bool swallowed = true, bool ignoreMood = false)
     {
-        if (!WillEat(food))
+        if (ignoreMood ? Species.FoodEffect(food) is null : !WillEat(food))
             return Meal.None;
         var effect = Species.FoodEffect(food)!;
         // Every eat rule that matches the food counts as a meal: a largo's food matches one rule per
