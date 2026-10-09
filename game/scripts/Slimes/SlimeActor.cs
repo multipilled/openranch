@@ -114,6 +114,8 @@ public partial class SlimeActor : Actor
     /// <summary>The prefab root's scale (2 for largos).</summary>
     public float PrefabScale => _scale;
     public Random Random => _random;
+    /// <summary>What it is doing now (for check reports).</summary>
+    public string Doing => _activity == Activity.Behaviour && _behaviour is not null ? _behaviour.GetType().Name : _activity.ToString();
 
     /// <summary>The slime's appetite and mood.</summary>
     public Slime Sim { get; }

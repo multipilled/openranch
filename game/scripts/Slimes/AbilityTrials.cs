@@ -77,6 +77,10 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
             Finish(v.Ok, v.Line);
     }
 
+    public override string TimedOut() => !GodotObject.IsInstanceValid(Slime) ? Outcome
+        : $"{Outcome}; {_slimeId} age {Slime.Age:F0} s doing {Slime.Doing}, {Slime.GlobalPosition.DistanceTo(Center):F1} m from the pen centre, " +
+          $"grounded={Slime.Grounded}, hunger {Slime.Sim.Hunger:F2}, fired {Piece?.Fires ?? 0}x, player held={HasPlayer}";
+
     private void Finish(bool ok, string line)
     {
         if (ok)

@@ -43,6 +43,8 @@ public sealed class FeralTrial : ZooTrial
     private string? _food;
     private int _stomps, _stompDamage, _biteDamage, _bites;
     private readonly List<int> _stompHits = [];
+    private string? _fell, _lastDoing;
+    private Vector3 _lastPos, _lastVelocity;
     private float _healthAtStart;
     private bool _wasFeral, _fullYetEats, _fed;
     private readonly List<string> _notes = [];
@@ -84,6 +86,10 @@ public sealed class FeralTrial : ZooTrial
             Fail("the feral largo is gone");
             return;
         }
+        // Diagnostics: where and how it left the floor, if it does.
+        if (_fell is null && _slime.GlobalPosition.Y < Center.Y - 3)
+            _fell = $"fell off at {Time:F1} s from {_lastPos - Center:F1} (pen-relative) doing {_lastDoing}, velocity {_lastVelocity:F1}, stomps {_stomps}";
+        (_lastPos, _lastDoing, _lastVelocity) = (_slime.GlobalPosition, _slime.Doing, _slime.LinearVelocity);
         if (_stomps == 0 || _bites == 0)
         {
             if (Zoo.HoldPlayer(this, Center + new Vector3(4.5f, 0, 4.5f)) && _healthAtStart == 0)
@@ -116,7 +122,10 @@ public sealed class FeralTrial : ZooTrial
             Fail(line);
     }
 
-    public override string TimedOut() => Outcome;
+    public override string TimedOut() => _slime is null || !GodotObject.IsInstanceValid(_slime) ? Outcome
+        : $"{Outcome}; doing {_slime.Doing}, agitation {_slime.Sim.Agitation:F2}, grounded={_slime.Grounded}, " +
+          $"{(Catalog.Player is { } p ? _slime.GlobalPosition.DistanceTo(p.GlobalPosition) : -1):F1} m from the player, " +
+          $"{_slime.GlobalPosition.DistanceTo(Center):F1} m from the pen centre, stomp damage [{string.Join(",", _stompHits)}]; {_fell ?? "never fell"}";
 }
 
 /// <summary>

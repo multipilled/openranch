@@ -335,7 +335,8 @@ public sealed class QuantumGhosts : SlimeBehaviour
         var angle = Slime.Random.NextDouble() * Math.PI * 2;
         var r = _searchRadius * MathF.Sqrt((float)Slime.Random.NextDouble());
         var spot = Slime.GlobalPosition + new Vector3((float)Math.Cos(angle) * r, 0, (float)Math.Sin(angle) * r);
-        var hit = Slime.Ray(spot + Vector3.Up * 50, spot + Vector3.Down * 50, Actor.WorldLayer);
+        // The original casts against every solid layer, so walls and items count as ground too.
+        var hit = Slime.Ray(spot + Vector3.Up * 50, spot + Vector3.Down * 50, Solid);
         if (hit.Count == 0)
             return false;
         var at = (Vector3)hit["position"] + Vector3.Up * QuantumSlime.QubitRadius;
@@ -358,13 +359,15 @@ public sealed class QuantumGhosts : SlimeBehaviour
         return true;
     }
 
+    private const uint Solid = Actor.WorldLayer | Actor.ActorLayer | Actor.PenWallLayer;
+
     private bool Clear(Vector3 at)
     {
         var query = new PhysicsShapeQueryParameters3D
         {
             Shape = new SphereShape3D { Radius = QuantumSlime.ClearRadius },
             Transform = new Transform3D(Basis.Identity, at),
-            CollisionMask = Actor.WorldLayer | Actor.ActorLayer,
+            CollisionMask = Solid,
             Exclude = [Slime.GetRid()],
         };
         return Slime.GetWorld3D().DirectSpaceState.IntersectShape(query, 1).Count == 0;
@@ -389,6 +392,7 @@ public sealed class QuantumGhosts : SlimeBehaviour
         var to = free[Slime.Random.Next(free.Count)];
         var from = Slime.GlobalPosition;
         Slime.GlobalPosition = to.GlobalPosition;
+        Slime.LinearVelocity = Vector3.Zero;
         _jumped = true;
         foreach (var q in _qubits)
             q.QueueFree();

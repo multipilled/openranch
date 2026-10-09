@@ -26,6 +26,7 @@ namespace OpenRanch.Game.Slimes;
 /// </summary>
 public partial class SlimeZoo : Node3D
 {
+    private const double RefeedSeconds = 60;
     private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TimeoutSeconds = 300;
     private const string FormingSlime = "PINK_SLIME", FirstPlort = "ROCK_PLORT", ThirdPlort = "TABBY_PLORT";
 
@@ -37,6 +38,8 @@ public partial class SlimeZoo : Node3D
         public List<string> Expected = [];
         public bool Ate;
         public List<string> Made = [];
+        public SlimeActor? Actor;
+        public double FedAt;
         public bool Done => Food is null || (Ate && Expected.GroupBy(e => e).All(g => Made.Count(m => m == g.Key) >= g.Count()));
     }
 
@@ -84,6 +87,7 @@ public partial class SlimeZoo : Node3D
         }
         foreach (var trial in _trials.Where(t => !t.Done))
             trial.Step(delta);
+        Refeed();
         if (_playerHolder is { Done: true })
             _playerHolder = null;
         if (!_check)
@@ -152,6 +156,8 @@ public partial class SlimeZoo : Node3D
                 Place(food.Food, pen.Center + new Vector3(1.1f, 0, 0));
             }
             var slime = (SlimeActor)Place(pen.Slime, pen.Center + new Vector3(-0.7f, 0, 0));
+            pen.Actor = slime;
+            pen.FedAt = _time;
             slime.Sim.Hunger = 1; // hungry from the start, so the check doesn't wait hours of game time
             slime.Ate += (_, eaten) => pen.Ate |= eaten == pen.Food;
             slime.Produced += (_, item) => pen.Made.Add(item.Id);
@@ -181,6 +187,20 @@ public partial class SlimeZoo : Node3D
             Place(ThirdPlort, _formingPen.Center + away * 1.4f);
             largo.Transformed += (_, tarr) => (_tarr, _tarrAt) = (tarr.Id, _time - _builtAt);
         };
+    }
+
+    // openranch's test harness: a slime that hasn't eaten its food within a minute (stalkers in a 4 m pen
+    // can bat it out of reach, or carry it off) gets a fresh one dropped on it.
+    private void Refeed()
+    {
+        foreach (var pen in _pens)
+        {
+            if (pen.Ate || pen.Food is null || pen.Actor is not { } s || !IsInstanceValid(s) || s.Consumed || _time - pen.FedAt < RefeedSeconds)
+                continue;
+            pen.FedAt = _time;
+            var food = Catalog.Spawn(pen.Food, s.GlobalPosition + Vector3.Up * (s.Radius + 0.6f));
+            food.LinearVelocity = Vector3.Zero;
+        }
     }
 
     // The trials for the parts asked for (all of them by default).
