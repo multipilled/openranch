@@ -98,7 +98,8 @@ public static class ZoneBuilder
         return new Result(root, meshInstances, multiMeshes, instances, shapes);
     }
 
-    private static CollisionShape3D? MakeShape(ColliderItem item, WorldAssets assets)
+    /// <summary>A Godot collision shape for one of the scene's colliders, placed in the world (null if it has no faces).</summary>
+    public static CollisionShape3D? MakeShape(ColliderItem item, WorldAssets assets)
     {
         var world = UnityConvert.Transform(item.World);
         var c = item.Collider;

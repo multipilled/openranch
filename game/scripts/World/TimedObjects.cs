@@ -23,6 +23,14 @@ public partial class TimedObjects : Node3D
     /// <summary>Each object with the hours it shows, and its node.</summary>
     public IEnumerable<(TimedGroup Group, Node3D Node, Node? Body)> Groups => _groups;
 
+    /// <summary>None yet: the parts of a streamed world are added as they are built (<see cref="Add"/>).</summary>
+    public static TimedObjects Empty(float hour)
+    {
+        var result = new TimedObjects();
+        result.SetHour(hour);
+        return result;
+    }
+
     public static TimedObjects Build(ZoneExtract zone, WorldAssets assets, PhysicsLayers layers, WorldLighting lighting, float hour)
     {
         var result = new TimedObjects();
@@ -42,6 +50,34 @@ public partial class TimedObjects : Node3D
         }
         result.SetHour(hour);
         return result;
+    }
+
+    /// <summary>
+    /// Adds a part of the world's objects tied to the time of day, built under <paramref name="parent"/> (a cell that
+    /// loads and unloads, World/WorldMap.cs), shown or hidden for the hour the others show.
+    /// </summary>
+    public void Add(ZoneExtract part, WorldAssets assets, PhysicsLayers layers, WorldLighting lighting, Node parent)
+    {
+        foreach (var group in part.TimedGroups)
+        {
+            var built = ZoneBuilder.Build(part with
+            {
+                Name = $"{_groups.Count}: {group.Path.Split('/').Last()}",
+                Renderers = group.Renderers,
+                Colliders = group.Colliders,
+            }, assets, layers);
+            foreach (var lamp in group.Lights)
+                lighting.AddLamp(lamp, built.Root);
+            parent.AddChild(built.Root);
+            var body = built.Root.GetNodeOrNull("Collision");
+            _groups.Add((group, built.Root, body));
+            if (_hour is { } hour)
+            {
+                built.Root.Visible = group.IsShown(hour);
+                if (body is not null && !built.Root.Visible)
+                    body.ProcessMode = ProcessModeEnum.Disabled;
+            }
+        }
     }
 
     /// <summary>Shows the objects whose hours include <paramref name="hour"/> (0 to 24) and hides the rest.</summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -60,31 +61,60 @@ public partial class Ranch : Node3D
         var ranchState = saved?.Ranch ?? new OpenRanch.Ranch.RanchState();
         WorldTime.ApplyStartHour(ranchState, args);
         var state = (saved?.State ?? WorldState.NewGame) with { Hour = (float)ranchState.Clock.Hour, RunningClock = true };
-        var zone = ZoneExtractor.Extract(assets, scene, zoneName, state);
-        if (saved is not null)
-            zone = saved.Apply(zone);
         var layers = PhysicsLayers.Read(assets);
         var rig = PlayerRig.Read(assets, scene);
         var lighting = SceneLighting.Read(assets, scene);
         var ambience = ZoneAmbience.ReadAll(assets, install);
-        var read = clock.ElapsedMilliseconds;
-
         var world = new WorldAssets(assets);
-        var built = ZoneBuilder.Build(zone, world, layers);
-        AddChild(built.Root);
-        GD.Print($"{zoneName}: read in {read} ms, built in {clock.ElapsedMilliseconds - read} ms: " +
-                 $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
-                 $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
+        ZoneExtract zone;
+        WorldLighting worldLighting;
+        TimedObjects timed;
+        // Milestone 4: without --zone, every zone of the world scene, its cells loaded around the player (World/WorldMap.cs).
+        // --m3-check checks The Ranch alone against the save (every plot on built ground), so it keeps the single zone.
+        WorldMap? map = null;
+        var savedPlots = new Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>>();
+        if (Arg("--zone") is null && Array.IndexOf(args, "--m3-check") < 0)
+        {
+            worldLighting = new WorldLighting(lighting, ambience, [], [], state.Hour, TimeOfDayLight.Read(assets, scene));
+            timed = TimedObjects.Empty(state.Hour);
+            map = WorldMap.Create(install, assets, scene, state, name => SavedPlots(install, assets, saved, Arg("--save"), state, name, savedPlots),
+                layers, world, worldLighting, timed);
+            map.LoadAll = Array.IndexOf(args, "--load-all") >= 0 || Array.IndexOf(args, "--collision-check") >= 0;
+            AddChild(worldLighting);
+            AddChild(timed);
+            AddChild(map);
+            zone = map.Merged(zoneName);
+            GD.Print($"World: read {map.ZonesOf(map.Sets.Home).Count()} HOME zones and the rest in {map.ReadMilliseconds} ms");
+        }
+        else
+        {
+            zone = ZoneExtractor.Extract(assets, scene, zoneName, state);
+            if (saved is not null)
+                zone = saved.Apply(zone);
+            var read = clock.ElapsedMilliseconds;
 
-        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour, TimeOfDayLight.Read(assets, scene), zone.Cells);
-        AddChild(worldLighting);
-        var timed = TimedObjects.Build(zone, world, layers, worldLighting, state.Hour);
-        AddChild(timed);
+            var built = ZoneBuilder.Build(zone, world, layers);
+            AddChild(built.Root);
+            GD.Print($"{zoneName}: read in {read} ms, built in {clock.ElapsedMilliseconds - read} ms: " +
+                     $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
+                     $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
+
+            worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour, TimeOfDayLight.Read(assets, scene), zone.Cells);
+            AddChild(worldLighting);
+            timed = TimedObjects.Build(zone, world, layers, worldLighting, state.Hour);
+            AddChild(timed);
+        }
 
         var player = new PlayerController { Name = "Player" };
         AddChild(player);
         player.Configure(rig.Height, rig.Radius, rig.SlopeLimitDegrees, rig.EyeHeight);
         player.Position = UnityConvert.Position(rig.Spawn);
+        if (map is not null)
+        {
+            WorldStart.Place(map, player, rig, saved?.Ranch.Player, Arg("--spawn"), Arg("--camera"));
+            GD.Print($"World: built {map.CellsBuilt} cells around the player in {map.BuildMilliseconds} ms, {world.MaterialCount} materials, " +
+                     $"{world.TextureCount} textures; {clock.ElapsedMilliseconds} ms since start");
+        }
         // Milestone 4: other areas start where a teleporter puts the player (World/ZoneSpawn.cs).
         var otherZone = zoneName != "zoneRANCH";
         if (otherZone && ZoneSpawn.Pick(zone, Arg("--spawn")) is { } spawn)
@@ -96,7 +126,7 @@ public partial class Ranch : Node3D
 
         if (Array.IndexOf(args, "--collision-check") >= 0)
         {
-            _collisionCheck = new CollisionCheck(this, player, zone, rig, layers);
+            _collisionCheck = new CollisionCheck(this, player, map is null ? zone : map.MergedSet(map.CurrentSet), rig, layers);
             return;
         }
 
@@ -118,7 +148,9 @@ public partial class Ranch : Node3D
                 player.SetPhysicsProcess(false); // hold the exact view for the capture
         }
         worldLighting.Attach(player.Camera);
-        if (otherZone)
+        if (map is not null)
+            AddChild(new WorldCheck(map, player, worldLighting, args, saved?.Ranch, savedPlots));
+        if (otherZone || map is not null)
             GD.Print($"{zoneName}: ambience zone {worldLighting.OutsideZone} outside caves at the start");
 
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
@@ -130,6 +162,7 @@ public partial class Ranch : Node3D
         if (m2 is not null)
         {
             AddChild(m2);
+            map?.Manage(m2.Catalog.Actors);
             if (zoo)
                 AddChild(new Slimes.SlimeZoo(m2, player, args));
             saved?.Populate(m2);
@@ -147,6 +180,18 @@ public partial class Ranch : Node3D
         // The ranch house's door: sleeping until morning (Home/RanchHouse.cs).
         if (m2 is not null && Home.RanchHouse.Create(m2.Scripts, zoneName, player, worldTime, m2, args) is { } house)
             AddChild(house);
+    }
+
+    // Milestone 4: the save's plots on another zone's sites (SaveLoad/SavedRanch.cs reads one zone's sites at a time).
+    private static (WorldState, Func<ZoneExtract, ZoneExtract>)? SavedPlots(GameInstall install, AssetSet assets, SaveLoad.SavedRanch? ranch,
+        string? savePath, WorldState state, string zoneName, Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>> placed)
+    {
+        if (savePath is null)
+            return null;
+        var saved = zoneName == "zoneRANCH" && ranch is not null ? ranch : SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName);
+        placed[zoneName] = saved.Plots;
+        GD.Print($"World: {zoneName} has {saved.Plots.Count} of the save's plots");
+        return (state with { Hidden = saved.State.Hidden }, saved.Apply);
     }
 
     private void ShowMessage(string text)
