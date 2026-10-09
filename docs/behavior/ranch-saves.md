@@ -55,7 +55,8 @@ openranch. The Slimepedia is the exception the original makes itself: it stores 
   other ranchers; anything not stored counts as 0.
 - **The world.** The plort market's seed and how saturated it is with each plort, how much each
   gordo has eaten, treasure pods, switches, puzzle slots, teleporters, phase sites, oases, ginger
-  patches and echo note gordos.
+  patches and echo note gordos; and each crop's next batch time and stored water, by the crop's
+  position (`resourceSpawnerWater`; see [produce.md](produce.md)).
 
 ## What the importer carries over
 
@@ -99,8 +100,13 @@ ranch as it was loaded and lays over it what the running world changed; the game
   keeps them.
 - **Rotation.** Written as the original stores it: Euler angles in degrees from 0 to 360, applied
   about z, then x, then y, in its left-handed axes (Godot's rotation is mirrored in z first).
-- **Plots, progress and doors** are written as loaded: nothing in the world builds, upgrades or buys
-  yet. The writer takes changes to them (`LiveRanch.Plots`, `Progress`, `AccessDoors`) for when it does.
+- **Plots, progress and doors** are written as the ranch holds them: the world builds, upgrades,
+  plants and buys expansions on the loaded ranch itself, and fills the plots' stores, feeders,
+  collectors and ash troughs there.
+- **Clocks.** Produce is written with its stage and when the stage ends, hens with their next laying
+  time and chicks with their growing-up time (`LiveActor.Timers`); rotten produce is left out, as the
+  original drops it from its records when it rots. Every crop's clock is written
+  (`LiveRanch.ResourceSpawners`); crops not in play keep the saved clock.
 - **The player** is written where their feet are and with the view as the original stores it
   (pitch and yaw in Euler degrees, the saved roll kept), only when the loader stood them there: a
   player who saved in another zone than the one running keeps the saved place and view.

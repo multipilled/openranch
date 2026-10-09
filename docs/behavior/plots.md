@@ -181,13 +181,18 @@ slimes left all of it hanging. The edible rule is from static analysis of the pr
 Checked: `--m3-check` compares the actors spawned, by type, with an independent read of the save
 (416 on the Game2 ranch).
 
+## In play
+
+- **Building, demolishing and upgrading** go through the plot's menu (its activator, the player's
+  interact ray) at the install's prices; the plot is rebuilt from its new prefab and upgrades.
+- **Produce** ripens, rots and regrows on the world clock: [produce.md](produce.md). A garden plants
+  what is thrown into its hole.
+- **Coops:** hens lay and chicks grow up: [coops.md](coops.md).
+- **Machines** (silo catchers, the corral's auto-feeder and plort collector, the incinerator and its
+  ash trough): [plot-machines.md](plot-machines.md).
+
 ## Not modelled yet
 
-- Produce ripening, rotting and new produce growing; the rotten look.
-
-- What each upgrade does beyond its pieces showing up (walls stop jumping slimes, the music box
-  calms, the feeder and plort collector run on timers, and so on). A loaded plot keeps its feeder,
-  collector, store and ash values (`PlotContents`), but nothing uses them yet.
-- The feeder's timing: each cycle queues a batch of drops; the batch size is on the feeder script
-  (`itemsPerFeeding`), the hours per cycle depend on the speed setting.
-- Gardens growing, ponds, incinerating and ash.
+- What the other upgrades do beyond their pieces showing up (walls stop jumping slimes, the music box
+  calms, the air net, the solar shield, the scareslime, miracle mix's preservative).
+- Ponds; taking items out of a silo; the feeder speed button.
