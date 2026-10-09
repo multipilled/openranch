@@ -6,9 +6,9 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 | Area | Owner session | Worktree / branch |
 |---|---|---|
-| src/OpenRanch.Formats/Scene; game/scripts/World (except WorldLighting's clock); game/scripts/CollisionCheck.cs; docs/behavior/zones.md; teleporter/region code; a small hook in game/scripts/Ranch.cs | SR M4 one world (proposed) | openranch-m4world / m4-world |
-| game/scripts/Slimes (except M2World.cs); src/OpenRanch.Simulation slime rules; new Simulation tests; docs/behavior/slimes.md, largos.md, slime-traits.md; new gordo/feral files | SR M5 gordos, feral, abilities (proposed) | openranch-m5abilities / m5-abilities |
-| game/scripts/SaveLoad; src/OpenRanch.Ranch; game/scripts/Slimes/M2World.cs; game/scripts/Market; new game/scripts/Ranch* UI files for plots and expansions; docs/behavior/plots.md, ranch-saves.md; new tests | SR M6 plots and expansions (proposed) | openranch-m6plots / m6-plots |
+| src/OpenRanch.Formats/Scene; game/scripts/World (except WorldLighting's clock); game/scripts/CollisionCheck.cs; docs/behavior/zones.md; teleporter/region code; a small hook in game/scripts/Ranch.cs | SR M4 one world (redo card; WIP 3a5a737) | openranch-m4world / m4-world |
+| game/scripts/Slimes (except M2World.cs); src/OpenRanch.Simulation slime rules; new Simulation tests; docs/behavior/slimes.md, largos.md, slime-traits.md; new gordo/feral files | SR M5 gordos, feral, abilities (redo card; WIP 8a8aa56) | openranch-m5abilities / m5-abilities |
+| game/scripts/SaveLoad; src/OpenRanch.Ranch; game/scripts/Slimes/M2World.cs; game/scripts/Market; new game/scripts/Ranch* UI files for plots and expansions; docs/behavior/plots.md, ranch-saves.md; new tests | SR M6 plots and expansions (redo card; WIP 166c1c4) | openranch-m6plots / m6-plots |
 | (paused, not merged: clean-room redo pending) landscape and paint shaders | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
 | README.md, OpenRanch.sln (except adding your own new projects), COORDINATION.md, UNVERIFIED.md structure, tools/, merges | coordinator (SR workstreams) | main checkout |
 
@@ -48,6 +48,10 @@ the main zones. Finished tasks are in git history; this table holds open work on
 | P3 | `--m3-check` market line fails on a save made just before midnight; slime fear not modelled; `SavedRanch.Load` opens a second GameScripts | unassigned | later | |
 
 Running now: M4 one world, M5 gordos/feral/abilities, M6 plots and expansions (M6 started early: it doesn't overlap M4/M5 files).
+
+Power loss 2026-10-09 ~2:57 AM ET killed all three workers mid-task. Their uncommitted work is saved as WIP commits on
+their branches (m4-world 3a5a737, m5-abilities 8a8aa56, m6-plots 166c1c4; none built). m4-world's zeroed WorldCheck.cs and
+WorldMap.cs were rebuilt exactly by replaying the dead worker's transcript. Fresh workers continue from the WIP (cards).
 
 Stale folders: D:\Projects\openranch-m3load and openranch-faces are empty but held open (their old
 sessions); delete once those sessions are archived.
