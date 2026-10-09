@@ -57,10 +57,29 @@ The numbers are in the game's code, not its data (named constants in `SlimeTrait
 static analysis of SlimeHover and RockSlimeRoll. Being calmed by water pauses both timers; water
 isn't in openranch yet.
 
+## Night only (phosphor)
+
+Static analysis of DestroyOutsideHoursOfDay and TimeDirector; values from the prefab (InstalledAbilityTests,
+OutsideHoursTests); checked by `--slime-zoo --zoo-part phosphor` (PhosphorTrial). openranch:
+src/OpenRanch.Simulation/OutsideHours.cs, game/scripts/Slimes/TraitBehaviours.cs (`NightOnly`).
+
+- Data: `startHour`, `endHour` (the window it lives in; for phosphors 18 to 6, wrapping past midnight),
+  `minEndureHoursOutsideWindow` and `maxEndureHoursOutsideWindow` (how long it lasts outside it; the
+  phosphor prefabs say 0.5 to 0.55 game hours; the code's default of 1.5 is never used). Only phosphor
+  slimes and phosphor largos carry it.
+- A clock starts when the slime appears: it picks an endurance in that range. If both now and now plus
+  the endurance are outside the window, it vanishes after the endurance; otherwise (in the window, or
+  the endurance reaches into it) it vanishes the endurance after the window next closes (the next 6:00
+  strictly after now). A clock not yet started counts from the new-game 9:00.
+- Entering a cave trigger (anything with `CaveTrigger`) stops the clock; leaving the last one starts a
+  fresh clock from then. `cavesPreventShutdown` is set but the code never reads it.
+- The corral's solar shield (roof) exception comes from the shield objects: openranch asks the world's
+  owner for "in a cave" (`ItemCatalog.InCave`); whether the shield carries its own cave trigger isn't
+  checked yet (UNVERIFIED.md).
+
 ## Not done yet
 
-- Phosphor slimes vanish outside 18:00 to 6:00 (`DestroyOutsideHoursOfDay`: after enduring 0.5 to 1.5
-  game hours outside the window; being in a cave stops the clock). Needs cave triggers.
+- Cave triggers in the world feeding `ItemCatalog.InCave` (zone work); the vanishing effect.
 - Tabby and saber food carrying (`GatherIdentifiableItems`: pick up fruit or veggies in the mouth and
   carry them toward other food), tabby, saber and hunter stalking and pouncing.
 - Boom explosions, rad aura, crystal spikes, quantum ghosts, dervish whirlwinds, tangle vines and

@@ -132,6 +132,47 @@ public sealed class ItemPrefabs
         return prefab;
     }
 
+    /// <summary>
+    /// A prefab that one of <paramref name="ownerId"/>'s root scripts points at (e.g. a pollen cloud,
+    /// a tornado): <paramref name="field"/> of the root script <paramref name="scriptClass"/>. Null when
+    /// the field is empty or not a game object. Read once and kept, named "owner:Script.field".
+    /// </summary>
+    public ItemPrefab? Referenced(string ownerId, string scriptClass, string field)
+    {
+        if (!_roots.TryGetValue(ownerId, out var root) || Get(ownerId).RootScript(scriptClass)?[field] is not PPtr ptr)
+            return null;
+        return ReadReferenced($"{ownerId}:{scriptClass}.{field}", root.File, ptr);
+    }
+
+    /// <summary>
+    /// A prefab from a slime's default appearance's extras (<c>SlimeAppearance.CrystalAppearance</c>,
+    /// <c>TornadoAppearance</c>, <c>GlintAppearance</c>, <c>VineAppearance</c>): <paramref name="field"/>
+    /// of the asset in <paramref name="extra"/>, e.g. ("CrystalAppearance", "smallCrystalPrefab"). Largos'
+    /// appearances carry their parents' extras already combined.
+    /// </summary>
+    public ItemPrefab? AppearancePrefab(string slimeId, string extra, string field)
+    {
+        if (!_roots.TryGetValue(slimeId, out var root)
+            || Get(slimeId).RootScript("SlimeAppearanceApplicator")?["SlimeDefinition"] is not PPtr defPtr
+            || _scripts.Follow(root.File, defPtr) is not { } definition
+            || definition.Data.Data!.List("AppearancesDefault").FirstOrDefault() is not PPtr appPtr
+            || _scripts.Follow(definition.Ref.File, appPtr) is not { } appearance
+            || appearance.Data.Data![extra] is not PPtr extraPtr
+            || _scripts.Follow(appearance.Ref.File, extraPtr) is not { } extras
+            || extras.Data.Data?[field] is not PPtr ptr)
+            return null;
+        return ReadReferenced($"{slimeId}:{extra}.{field}", extras.Ref.File, ptr);
+    }
+
+    private ItemPrefab? ReadReferenced(string key, SerializedFile from, PPtr ptr)
+    {
+        if (_read.TryGetValue(key, out var known))
+            return known;
+        if (_scripts.Assets.Resolve(from, ptr) is not { ClassId: UnityClassId.GameObject } go)
+            return null;
+        return _read[key] = ReadPrefab(key, go);
+    }
+
     public static ItemPrefabs Read(GameScripts scripts)
     {
         var assets = scripts.Assets;

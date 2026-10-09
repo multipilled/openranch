@@ -228,6 +228,24 @@ public partial class SlimeZoo : Node3D
             _playerHolder = null;
     }
 
+    /// <summary>Whether everything but <paramref name="trial"/> is done (eating pens and the other trials).</summary>
+    public bool OthersDone(ZooTrial trial) =>
+        (!Runs("eat") || (_pens.All(p => p.Done) && _largo is not null && _tarr is not null)) && _trials.All(t => t == trial || t.Done);
+
+    /// <summary>The world's clock, for trials that need another time of day.</summary>
+    public WorldTime? WorldTime => _worldTime ??= Find<WorldTime>(GetTree().Root);
+    private WorldTime? _worldTime;
+
+    private static T? Find<T>(Node node) where T : class
+    {
+        if (node is T found)
+            return found;
+        foreach (var child in node.GetChildren())
+            if (Find<T>(child) is { } inner)
+                return inner;
+        return null;
+    }
+
     /// <summary>Puts an item on the zoo's floor at <paramref name="onFloor"/>, resting on it.</summary>
     public Actor Place(string id, Vector3 onFloor)
     {

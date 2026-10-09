@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace OpenRanch.Game.Slimes;
@@ -38,4 +39,19 @@ public abstract class SlimeBehaviour
     public virtual void Tick(float delta) { }
     /// <summary>The slime has started touching <paramref name="body"/> (an item, the world, the player).</summary>
     public virtual void Touched(Node body) { }
+
+    /// <summary>How many times it has done its thing (exploded, launched, spun...).</summary>
+    public int Fires { get; private set; }
+    /// <summary>Raised each time it does its thing, with a line saying what happened and with which numbers.</summary>
+    public event Action<SlimeBehaviour, string>? Fired;
+
+    protected void Report(string what)
+    {
+        Fires++;
+        Fired?.Invoke(this, what);
+    }
+
+    /// <summary>The prefab component's number <paramref name="field"/> (0 when missing).</summary>
+    protected static float F(OpenRanch.Formats.Unity.Managed.SerializedObject? data, string field, float fallback = 0f) =>
+        data?[field] switch { float f => f, int i => i, _ => fallback };
 }

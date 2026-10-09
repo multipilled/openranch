@@ -16,6 +16,7 @@ public static class BehaviourTrials
     public static IEnumerable<ZooTrial> All(ItemCatalog catalog)
     {
         yield return new FeralTrial();
+        yield return new PhosphorTrial();
     }
 
     /// <summary>A food from the slime's diet that has a prefab (its favourite first), or null.</summary>
@@ -54,7 +55,9 @@ public sealed class FeralTrial : ZooTrial
             return;
         }
         _slime.Sim.Hunger = 0;
-        _slime.Sim.Agitation = 1; // an angry feral, so going for the player matters
+        // Calm first, so going for the player (driven by agitation) doesn't matter and it stomps; then
+        // angry, so it chases and bites (GotoPlayer's 0.95 mostly beats the stomp's 0.3-1).
+        _slime.Sim.Agitation = 0;
         feral.SetFeral(Catalog.Clock.TotalHours);
         _wasFeral = _slime.Sim.IsFeral;
         _food = BehaviourTrials.DietFood(Catalog, Largo);
@@ -82,6 +85,8 @@ public sealed class FeralTrial : ZooTrial
         {
             if (Zoo.HoldPlayer(this, Center + new Vector3(4.5f, 0, 4.5f)) && _healthAtStart == 0)
                 _healthAtStart = Catalog.PlayerVitals.Health;
+            if (_stompHits.Any(h => h > 0))
+                _slime.Sim.Agitation = 1;
             Outcome = $"feral={_slime.Sim.IsFeral} stomps={_stomps} bites={_bites}";
             return;
         }
@@ -109,4 +114,103 @@ public sealed class FeralTrial : ZooTrial
     }
 
     public override string TimedOut() => Outcome;
+}
+
+/// <summary>
+/// Phosphors at dawn (docs/behavior/slime-traits.md, "Night only"): once everything else in the zoo is
+/// done, the world clock jumps to 5:40 the next morning and runs six times faster. One phosphor stands
+/// in the open, one in a cave (half the pen counts as a cave, behind an items-only divider). The open
+/// one must vanish at 6:00 plus its data's endurance; the cave one must stay until it leaves the cave,
+/// then vanish its endurance later.
+/// </summary>
+public sealed class PhosphorTrial : ZooTrial
+{
+    private const string Phosphor = "PHOSPHOR_SLIME";
+    private const double JumpToHour = 5 + 40 / 60.0, Speed = 6; // openranch's test pace
+    private SlimeActor? _open, _caved;
+    private bool _jumped, _caveOpen = true;
+    private double _openGone = -1, _cavedLeft = -1, _cavedGone = -1, _previousSpeed = 1, _openShutdown, _cavedShutdownInCave;
+    private HoursWindow? _window;
+
+    public PhosphorTrial() : base("PHOSPHOR", "phosphor") { }
+
+    protected override void Build() => Outcome = "waiting for the rest of the zoo";
+
+    public override void Step(double delta)
+    {
+        if (Done)
+            return;
+        var now = Catalog.Clock.TotalHours;
+        if (!_jumped)
+        {
+            if (!Zoo.OthersDone(this))
+                return;
+            if (Zoo.WorldTime is not { } world)
+            {
+                Fail("no world clock to move");
+                return;
+            }
+            _jumped = true;
+            _previousSpeed = world.Speed;
+            world.Set(OpenRanch.Ranch.WorldClock.At(world.Clock.Day + 1, JumpToHour));
+            world.Speed = Speed;
+            Outcome = "clock moved to 5:40";
+            return;
+        }
+        if (_open is null)
+        {
+            // The clock moved last step; the slimes appear now, at night.
+            var divider = new StaticBody3D { Name = "PhosphorDivider", CollisionLayer = Actor.PenWallLayer, CollisionMask = 0 };
+            divider.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(0.2f, 40, 14) }, Position = Center + Vector3.Up * 20 });
+            Zoo.AddChild(divider);
+            var cave = Center.X;
+            var previous = Catalog.InCave;
+            Catalog.InCave = p => (_caveOpen && p.X > cave && Math.Abs(p.Z - Center.Z) < 7) || (previous?.Invoke(p) ?? false);
+            _open = (SlimeActor)Place(Phosphor, Center + new Vector3(-3.5f, 0, 0));
+            _caved = (SlimeActor)Place(Phosphor, Center + new Vector3(3.5f, 0, 0));
+            _window = _open.Behaviour<NightOnly>()?.Window;
+            if (_window is null)
+            {
+                Fail($"{Phosphor} has no DestroyOutsideHoursOfDay");
+                return;
+            }
+            _open.Behaviour<NightOnly>()!.Vanishing += h => _openGone = h;
+            _caved.Behaviour<NightOnly>()!.Vanishing += h => _cavedGone = h;
+            return;
+        }
+        if (_openShutdown == 0 && GodotObject.IsInstanceValid(_open))
+        {
+            _openShutdown = _open.Behaviour<NightOnly>()!.ShutdownAt;
+            _cavedShutdownInCave = _caved!.Behaviour<NightOnly>()!.ShutdownAt;
+        }
+        if (_openGone >= 0 && _cavedLeft < 0)
+        {
+            _caveOpen = false; // the cave one leaves its cave
+            _cavedLeft = now;
+        }
+        Outcome = $"{Hour(now)}: open {(_openGone < 0 ? "here" : "gone at " + Hour(_openGone))}, cave {(_cavedGone < 0 ? "here" : "gone at " + Hour(_cavedGone))}";
+        if (_cavedGone < 0)
+            return;
+
+        if (Zoo.WorldTime is { } w)
+            w.Speed = _previousSpeed;
+        var dawn = OutsideHours.NextHour(_openGone - 1, _window!.EndHour);
+        var (min, max) = (_window.MinEndureHours, _window.MaxEndureHours);
+        const double step = 0.01; // a physics step at this pace is well under a hundredth of an hour
+        var openOk = _openGone >= dawn + min - step && _openGone <= dawn + max + step;
+        var cavedAfter = _cavedGone - _cavedLeft;
+        var caveOk = double.IsPositiveInfinity(_cavedShutdownInCave) && _cavedLeft >= _openGone && cavedAfter >= min - step && cavedAfter <= max + step;
+        var line = $"{Phosphor}: window {_window.StartHour}-{_window.EndHour}, endures {min}-{max} h; open-air one vanished at {Hour(_openGone)} " +
+                   $"(dawn + {_openGone - dawn:F3} h), the cave one stayed (no clock in the cave), left at {Hour(_cavedLeft)} and vanished {cavedAfter:F3} h later";
+        if (openOk && caveOk)
+            Pass(line);
+        else
+            Fail(line);
+    }
+
+    private static string Hour(double total)
+    {
+        var h = total % 24;
+        return $"{(int)h}:{(int)((h - (int)h) * 60):00}";
+    }
 }

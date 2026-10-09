@@ -60,4 +60,21 @@ public class InstalledAbilityTests
             Assert.Equal(20, Script(id, "AttackPlayer")["damagePerAttack"]);
         }
     }
+
+    [GameFact]
+    public void Phosphors_and_their_largos_live_only_from_six_at_night_to_six_in_the_morning()
+    {
+        var withWindow = Prefabs.Value.Ids.Where(i => Prefabs.Value.Get(i).RootScript("DestroyOutsideHoursOfDay") is not null).ToList();
+        Assert.Contains("PHOSPHOR_SLIME", withWindow);
+        Assert.All(withWindow, id => Assert.Contains("PHOSPHOR", id));
+        foreach (var id in withWindow)
+        {
+            var d = Script(id, "DestroyOutsideHoursOfDay");
+            Assert.Equal(18f, d["startHour"]);
+            Assert.Equal(6f, d["endHour"]);
+            Assert.Equal(0.5f, d["minEndureHoursOutsideWindow"]);
+            Assert.Equal(0.55f, d["maxEndureHoursOutsideWindow"]);
+            Assert.Equal(true, d["cavesPreventShutdown"]);
+        }
+    }
 }
