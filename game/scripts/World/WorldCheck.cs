@@ -45,6 +45,7 @@ public partial class WorldCheck : Node
     private readonly string? _groundMap;
     private readonly bool _listCells;
     private readonly bool _saveCheck;
+    private readonly bool _active;
     private readonly RanchState? _save;
     private readonly IReadOnlyDictionary<string, IReadOnlyList<PlacedPlot>>? _savedPlots;
     private int _leg;
@@ -79,11 +80,10 @@ public partial class WorldCheck : Node
         _listCells = Array.IndexOf(args, "--list-cells") >= 0;
         _end = Arg("--walk-to") is { } end && end.Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture)).ToArray() is { Length: 3 } e
             ? new N.Vector3(e[0], e[1], e[2]) : DefaultEnd;
-        if (!_walk && _groundMap is null && !_listCells && !_saveCheck)
-        {
-            SetPhysicsProcess(false);
+        // Godot switches physics processing back on when the node is ready, so idle runs are skipped by this flag.
+        _active = _walk || _groundMap is not null || _listCells || _saveCheck;
+        if (!_active)
             return;
-        }
         map.CellsChanged += (loaded, unloaded) =>
         {
             _loads += loaded.Count;
@@ -110,6 +110,8 @@ public partial class WorldCheck : Node
 
     public override void _PhysicsProcess(double delta)
     {
+        if (!_active)
+            return;
         _time += delta;
         if (_phase == Phase.Settle)
         {
