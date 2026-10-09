@@ -16,12 +16,21 @@ namespace OpenRanch.Game.Home;
 /// The ranch house's door (docs/behavior/day-cycle.md, "Sleeping"): the world scene puts a UI activator
 /// whose screen is the ranch house's (RanchHouseUI) on the house's "interactTrigger" box. Looking at it
 /// from within the player rig's reach (UIDetector.interactDistance) and pressing the interact key
-/// sleeps: the world clock runs at the sleeping pace (ffSecsPerGameDay) to the next 6:00 and the player
-/// is held still until then. The original opens the ranch house screen, whose sleep button does this;
-/// openranch has no screen yet and sleeps at once (UNVERIFIED.md, "Ranch house screen").
+/// opens the ranch house screen (<see cref="Screen"/>, game/scripts/RanchEconomy/RanchHouseScreen.cs),
+/// whose sleep button sleeps: the world clock runs at the sleeping pace (ffSecsPerGameDay) to the next
+/// 6:00 and the player is held still until then.
 /// Command-line option after "--": --sleep-check sleeps from the current hour (use --hour 20) through
-/// the door, checks the wake-up time and the pace, prints a report and quits.
+/// the door and the screen's sleep button, checks the wake-up time and the pace, prints a report and quits.
 /// </summary>
+/// <summary>The ranch house screen the door opens.</summary>
+public interface IHouseScreen
+{
+    bool IsOpen { get; }
+    void Open();
+    /// <summary>Presses the screen's sleep button.</summary>
+    void PressSleep();
+}
+
 public partial class RanchHouse : Node3D
 {
     /// <summary>The input action that uses what the player looks at (openranch's key: E; UNVERIFIED.md, "Interact key").</summary>
@@ -41,6 +50,8 @@ public partial class RanchHouse : Node3D
     private RanchHouse(PlayerController player, WorldTime clock, Slimes.M2World? m2, Transform3D door, Vector3 center, Vector3 size, float reach, bool check)
     {
         Name = "RanchHouse";
+        // Waking is noticed, and the check runs, while the open ranch house screen pauses the game.
+        ProcessMode = ProcessModeEnum.Always;
         _player = player;
         _clock = clock;
         _m2 = m2;
@@ -51,6 +62,12 @@ public partial class RanchHouse : Node3D
         if (check)
             _check = new SleepCheck(this);
     }
+
+    /// <summary>The screen the door opens; a plain one (no save button) is made on first use when none was given.</summary>
+    public IHouseScreen? Screen { get; set; }
+
+    /// <summary>The world clock's reading now.</summary>
+    public WorldClock Clock => _clock.Clock;
 
     /// <summary>Whether the world clock is running at the sleeping pace.</summary>
     public bool Sleeping => _clock.Cycle.IsFastForwarding;
@@ -99,7 +116,7 @@ public partial class RanchHouse : Node3D
     public override void _UnhandledInput(InputEvent e)
     {
         // The original acts when the interact button is released (UIDetector).
-        if (e.IsActionReleased(InteractAction))
+        if (e.IsActionReleased(InteractAction) && Screen?.IsOpen != true && !GetTree().Paused)
             Interact();
     }
 
@@ -115,12 +132,18 @@ public partial class RanchHouse : Node3D
         return hit.Count > 0 && hit["collider"].AsGodotObject() == _door;
     }
 
-    /// <summary>Uses the door if the player looks at it: sleeps until morning. Returns whether it did.</summary>
+    /// <summary>Uses the door if the player looks at it: opens the ranch house screen. Returns whether it did.</summary>
     public bool Interact()
     {
         if (Sleeping || !LookingAtDoor())
             return false;
-        Sleep();
+        if (Screen is null)
+        {
+            var screen = new RanchEconomy.RanchHouseScreen(this, null);
+            AddChild(screen);
+            Screen = screen;
+        }
+        Screen.Open();
         return true;
     }
 
@@ -231,7 +254,10 @@ public partial class RanchHouse : Node3D
                 var dir = (middle - cameraAt).Normalized();
                 player.Look(Mathf.RadToDeg(Mathf.Atan2(-dir.X, -dir.Z)), Mathf.RadToDeg(Mathf.Asin(dir.Y)));
                 if (house.Interact())
+                {
+                    house.Screen!.PressSleep();
                     return true;
+                }
             }
             player.SetPhysicsProcess(true);
             return false;

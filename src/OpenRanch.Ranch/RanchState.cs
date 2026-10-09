@@ -282,7 +282,15 @@ public sealed class WorldState
     public List<string> ActiveGingerPatches { get; set; } = [];
     /// <summary>Echo note gordos by id (<see cref="GameEnum.EchoNoteGordoState"/>), null when the original stored no state.</summary>
     public Dictionary<string, int?> EchoNoteGordos { get; set; } = [];
+    /// <summary>
+    /// Each crop's clock (the original's <c>resourceSpawnerWater</c>), keyed by where the crop stands: when
+    /// it next grows produce and the water it has stored. See docs/behavior/produce.md.
+    /// </summary>
+    public List<CropTimes> ResourceSpawners { get; set; } = [];
 }
+
+/// <summary>A crop's clock: where it stands (its spawner's position), when it next grows produce (world time) and its stored water.</summary>
+public sealed record CropTimes(Vec3 Position, double NextSpawnTime, float Water);
 
 public sealed record Gordo(int EatenCount, List<int> Fashions);
 

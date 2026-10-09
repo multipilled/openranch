@@ -50,7 +50,8 @@ public class PlotLayoutTests(ITestOutputHelper output)
         var names = InstalledNames.Get;
         var barriers = ExpansionBarriers.Read(scripts, scripts.Assets.File("level3")!, "zoneRANCH", names);
         Assert.Equal(10, barriers.Count);
-        Assert.Equal(3, barriers.Count(b => b.DoorId is not null));
+        // The Docks', the Grotto's, the Overgrowth's and the Lab's door (a LabAccessDoor).
+        Assert.Equal(4, barriers.Count(b => b.DoorId is not null));
         Assert.All(barriers, b => Assert.True(b.DoorId is not null || b.Expansions.Count > 0, b.Path));
 
         var (_, save) = Saves.Newest(Game2FactAttribute.GameName)!.Value;

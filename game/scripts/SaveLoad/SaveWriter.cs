@@ -92,6 +92,18 @@ public partial class SaveWriter : Node
             GetTree().Quit(ok ? 0 : 1);
     }
 
+    /// <summary>The clocks the world runs on an actor (produce, hens, chicks; RanchEconomy/RanchProduce.cs), or null.</summary>
+    public System.Func<Slimes.Actor, ActorTimers?>? Timers { get; set; }
+
+    /// <summary>Actors in the world the original doesn't save (rotten produce), left out of the save.</summary>
+    public System.Func<Slimes.Actor, bool>? Unsaved { get; set; }
+
+    /// <summary>Called before each write, to bring what the world runs up to the clock.</summary>
+    public event System.Action? BeforeWrite;
+
+    /// <summary>Every crop's clock now, when the world runs them.</summary>
+    public System.Func<IReadOnlyList<CropTimes>>? Crops { get; set; }
+
     /// <summary>The ranch as the world holds it now.</summary>
     public RanchState Snapshot(out (int Kept, int Added, int Gone) counts)
     {
@@ -99,7 +111,7 @@ public partial class SaveWriter : Node
         var actors = new List<LiveActor>();
         foreach (var actor in _m2.Catalog.Live)
         {
-            if (!TryType(actor.Id, out var type))
+            if (!TryType(actor.Id, out var type) || Unsaved?.Invoke(actor) == true)
                 continue;
             // The loader hands over the save's id of every actor it put into the world.
             long? id = _saved.SpawnedIds.TryGetValue(actor, out var saved) ? saved : null;
@@ -110,16 +122,16 @@ public partial class SaveWriter : Node
                 ? new Dictionary<int, float> { [_hunger] = slime.Sim.Hunger, [_agitation] = slime.Sim.Agitation }
                 : new Dictionary<int, float>();
             var p = Unity(actor.GlobalPosition);
-            actors.Add(new LiveActor(id, type, new Vec3(p.X, p.Y, p.Z), rotation, moods));
+            actors.Add(new LiveActor(id, type, new Vec3(p.X, p.Y, p.Z), rotation, moods, Timers?.Invoke(actor)));
         }
         var tracked = _saved.SpawnedIds.Values.ToHashSet();
         var kept = actors.Count(a => a.ActorId is not null);
         counts = (kept, actors.Count - kept, tracked.Count - kept);
 
-        // The player is written where they stand when the loader placed them from the save; a player
-        // who saved in another zone keeps the saved place.
+        // The player is written where they stand when the loader placed them from the save, or in a new
+        // game; a player who saved in another zone keeps the saved place.
         Vec3? playerAt = null, playerView = null;
-        if (_player is not null && _saved.Player is not null)
+        if (_player is not null && (_saved.Player is not null || _saved.FilePath.Length == 0))
         {
             var feet = Unity(_player.GlobalPosition);
             playerAt = new Vec3(feet.X, feet.Y, feet.Z);
@@ -135,12 +147,13 @@ public partial class SaveWriter : Node
             MoneyEarned = _earned,
             // The world clock (World/WorldTime.cs) moves the loaded ranch's world time itself.
             WorldTime = ranch.WorldTime,
-            // Plots stand as loaded: nothing in the world builds or upgrades them yet.
-            Plots = _saved.Plots.ToDictionary(p => p.Site.Id, p => new LivePlot(p.Plot.Type, p.Plot.Upgrades)),
+            // Plots, access doors and progress counters: the world changes the ranch's own (RanchEconomy
+            // builds, upgrades, plants and buys expansions on it), so they are written as the ranch holds them.
             MarketSaturation = _m2.Market.Saturations.Where(kv => TryType(kv.Key, out _))
                 .ToDictionary(kv => _names.Value(GameEnum.ItemId, kv.Key), kv => kv.Value),
             // The vacpack of normal play; a slime sucked up left the world and is kept here.
             Ammo = new Dictionary<int, IReadOnlyList<AmmoSlot>> { [_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)] = PlayerVacpack.Save(_m2.Pack, _names) },
+            ResourceSpawners = Crops?.Invoke(),
             TrackedActorIds = tracked,
             Actors = actors,
         };
@@ -152,6 +165,7 @@ public partial class SaveWriter : Node
     {
         try
         {
+            BeforeWrite?.Invoke();
             var ranch = Snapshot(out var counts);
             RanchSave.WriteFile(path, ranch);
             GD.Print($"Saved {path}: {ranch.Player.Money} money, day {ranch.Clock.Day} {ranch.Clock.Hour:F2} h, " +

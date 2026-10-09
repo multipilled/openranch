@@ -30,6 +30,7 @@ namespace OpenRanch.Game;
 ///   --slime-zoo [--zoo-focus ID]    every slime and largo in pens with its food; a check unless --screenshot (Slimes/SlimeZoo.cs)
 ///   --hour H, --day-speed X, --day-check   the world clock, see World/WorldTime.cs
 ///   --sleep-check                   sleep through the ranch house's door and check the clock, see Home/RanchHouse.cs
+///   --new-game, --money N, --sleep-save FILE, --m6-check   milestone 6, see RanchEconomy/Economy.cs
 /// </summary>
 public partial class Ranch : Node3D
 {
@@ -56,7 +57,9 @@ public partial class Ranch : Node3D
         var scene = assets.File("level3")!;
         var zoneName = Arg("--zone") ?? "zoneRANCH";
         // Milestone 3: a save's plots stand on their sites (game/scripts/SaveLoad).
-        var saved = Arg("--save") is { } savePath ? SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName) : null;
+        // Milestone 6: --new-game starts a new ranch the same way (RanchEconomy/Economy.cs).
+        var saved = Arg("--save") is { } savePath ? SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName)
+            : SaveLoad.SavedRanch.NewGame(install, assets, zoneName, args);
         // The world clock starts at the save's world time, or 9:00 on day 1, and runs (World/WorldTime.cs).
         var ranchState = saved?.Ranch ?? new OpenRanch.Ranch.RanchState();
         WorldTime.ApplyStartHour(ranchState, args);
@@ -159,6 +162,7 @@ public partial class Ranch : Node3D
         var zoo = Array.IndexOf(args, "--slime-zoo") >= 0;
         var m2Args = saved is null && !otherZone && !zoo ? args : args.Append("--no-slimes").ToArray();
         var m2 = Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args);
+        SaveLoad.SaveWriter? writer = null;
         if (m2 is not null)
         {
             AddChild(m2);
@@ -168,7 +172,7 @@ public partial class Ranch : Node3D
             saved?.Populate(m2);
             // Milestone 3: the live ranch saves back to openranch's own format (SaveLoad/SaveWriter.cs).
             if (saved is not null)
-                AddChild(new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0, player));
+                AddChild(writer = new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0, player));
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
                 AddChild(new SaveLoad.M3Check(saved, zone, m2, install, player));
         }
@@ -178,8 +182,12 @@ public partial class Ranch : Node3D
         // One clock: milestone 2's game time (hunger, plorts, market days) follows the world clock.
         m2?.Follow(worldTime);
         // The ranch house's door: sleeping until morning (Home/RanchHouse.cs).
-        if (m2 is not null && Home.RanchHouse.Create(m2.Scripts, zoneName, player, worldTime, m2, args) is { } house)
+        var house = m2 is not null ? Home.RanchHouse.Create(m2.Scripts, zoneName, player, worldTime, m2, args) : null;
+        if (house is not null)
             AddChild(house);
+        // Milestone 6: plots, expansions and the ranch house screen in play (RanchEconomy/Economy.cs).
+        if (saved is not null && m2 is not null && writer is not null)
+            AddChild(new RanchEconomy.Economy(saved, zone, m2, layers, player, worldTime, house, writer, args));
     }
 
     // Milestone 4: the save's plots on another zone's sites (SaveLoad/SavedRanch.cs reads one zone's sites at a time).

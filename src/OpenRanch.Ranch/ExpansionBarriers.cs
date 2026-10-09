@@ -9,9 +9,11 @@ namespace OpenRanch.Ranch;
 /// A barrier of the world scene that keeps the player and slimes out of a ranch expansion (an object
 /// with a <c>BarrierController</c> script): its path and game object (path id in the scene file), the
 /// access door on the same object if there is one (its saved id and the progress counters opening it
-/// grants), and the expansions its cell and name refer to (<see cref="GameEnum.Progress"/> values).
+/// grants), the expansions its cell and name refer to (<see cref="GameEnum.Progress"/> values), and
+/// where it stands (Unity world matrix).
 /// </summary>
-public sealed record ExpansionBarrier(string Path, long GameObject, string? DoorId, IReadOnlyList<int> DoorProgress, IReadOnlyList<int> Expansions);
+public sealed record ExpansionBarrier(string Path, long GameObject, string? DoorId, IReadOnlyList<int> DoorProgress, IReadOnlyList<int> Expansions,
+    System.Numerics.Matrix4x4 World = default);
 
 /// <summary>
 /// The expansion barriers of one area of the world scene, and which of them a saved ranch has
@@ -35,12 +37,13 @@ public static class ExpansionBarriers
         if (!ZoneExtractor.RootObjects(scripts.Assets, scene).TryGetValue(rootName, out var root))
             return barriers;
 
-        var stack = new Stack<(AssetRef Transform, string Path, string Cell)>();
-        stack.Push((root, "", ""));
+        var stack = new Stack<(AssetRef Transform, string Path, string Cell, System.Numerics.Matrix4x4 Parent)>();
+        stack.Push((root, "", "", System.Numerics.Matrix4x4.Identity));
         while (stack.Count > 0)
         {
-            var (transformRef, parentPath, cell) = stack.Pop();
+            var (transformRef, parentPath, cell, parent) = stack.Pop();
             var t = scripts.Assets.Read(transformRef, TransformData.Read);
+            var world = t.LocalMatrix * parent;
             if (scripts.Assets.Resolve(scene, t.GameObject) is not { } goRef || scripts.Assets.Read(goRef, GameObjectData.Read) is not { IsActive: true } go)
                 continue;
             var path = parentPath.Length == 0 ? go.Name : parentPath + "/" + go.Name;
@@ -53,16 +56,18 @@ public static class ExpansionBarriers
                     classes.Add((cls, b, mb.Data));
             if (classes.Any(c => c.Class == "BarrierController"))
             {
-                var door = classes.FirstOrDefault(c => c.Class == "AccessDoor");
+                // The Lab's door is a LabAccessDoor, derived from AccessDoor.
+                var door = classes.FirstOrDefault(c => c.Class == "AccessDoor"
+                    || scripts.Types.Find(GameScripts.GameAssembly, "", c.Class)?.DerivesFrom("AccessDoor") == true);
                 var doorId = door.Data is not null && ids.TryGetValue(door.Ref.PathId, out var id) ? id : null;
                 var progress = door.Data?.List("progress").Select(Convert.ToInt32).ToList() ?? [];
                 var words = $"{cell} {go.Name}";
                 var named = expansions.Where(e => words.Contains(e.Name, StringComparison.OrdinalIgnoreCase)).Select(e => e.Value).ToList();
-                barriers.Add(new ExpansionBarrier(path, goRef.PathId, doorId, progress, named));
+                barriers.Add(new ExpansionBarrier(path, goRef.PathId, doorId, progress, named, world));
             }
             foreach (var child in t.Children)
                 if (scripts.Assets.Resolve(scene, child) is { } childRef)
-                    stack.Push((childRef, path, cell));
+                    stack.Push((childRef, path, cell, world));
         }
         return barriers;
     }
@@ -77,7 +82,7 @@ public static class ExpansionBarriers
 }
 
 /// <summary>Saved ids of a scene's objects: each <c>IdDirector</c> pairs id holders (script components) with their ids.</summary>
-internal static class SceneIds
+public static class SceneIds
 {
     /// <summary>Ids by the holder component's path id in <paramref name="scene"/>.</summary>
     public static Dictionary<long, string> Read(GameScripts scripts, SerializedFile scene)

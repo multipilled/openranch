@@ -32,22 +32,16 @@ public sealed record SavedSlime(string Id, N.Vector3 Position, N.Vector3 EulerDe
 /// </summary>
 public sealed class SavedRanch
 {
-    private readonly List<RenderItem> _renderers;
-    private readonly List<ColliderItem> _colliders;
-
-    private SavedRanch(string path, RanchState ranch, IReadOnlyList<PlacedPlot> plots, WorldState state, List<RenderItem> renderers,
-        List<ColliderItem> colliders, IReadOnlyList<SavedSlime> slimes)
+    private SavedRanch(string path, RanchState ranch, IReadOnlyList<PlacedPlot> plots, WorldState state, IReadOnlyList<SavedSlime> slimes)
     {
         FilePath = path;
         Ranch = ranch;
         Plots = plots;
         State = state;
-        _renderers = renderers;
-        _colliders = colliders;
         CorralSlimes = slimes;
     }
 
-    /// <summary>The save file it was read from.</summary>
+    /// <summary>The save file it was read from; empty for a new game.</summary>
     public string FilePath { get; }
     public RanchState Ranch { get; }
     /// <summary>The plots on the zone's sites. The save lists the other zones' sites too; those aren't built here.</summary>
@@ -68,18 +62,44 @@ public sealed class SavedRanch
     public PlayerStart? Player { get; private init; }
 
     /// <summary>Reads the save and lays its plots out on the sites of <paramref name="zoneName"/>.</summary>
-    /// <param name="assets">The asset set the zone is built from; the plots' meshes and materials are taken from it.</param>
+    /// <param name="assets">The asset set the zone is built from (unused since RanchEconomy builds the plots; kept for callers).</param>
     public static SavedRanch Load(GameInstall install, AssetSet assets, string path, string zoneName)
     {
         var ranch = RanchFiles.Read(path);
         using var scripts = new GameScripts(install);
         using var names = new GameEnums(install);
+        return From(scripts, names, ranch, path, zoneName);
+    }
+
+    /// <summary>
+    /// With --new-game, a new game's ranch (src/OpenRanch.Ranch/Expansions.cs, <see cref="NewRanch"/>): the
+    /// scene's plots on the zone's sites, every door locked, the classic game mode's starting money (or
+    /// --money N, a testing option), 9:00 on day 1. Without --new-game, null.
+    /// </summary>
+    public static SavedRanch? NewGame(GameInstall install, AssetSet assets, string zoneName, string[] args)
+    {
+        if (System.Array.IndexOf(args, "--new-game") < 0)
+            return null;
+        using var scripts = new GameScripts(install);
+        using var names = new GameEnums(install);
+        var scene = scripts.Assets.File("level3") ?? throw new IOException("level3 is missing.");
+        var i = System.Array.IndexOf(args, "--money");
+        var money = i >= 0 && i + 1 < args.Length && int.TryParse(args[i + 1], out var m) && m >= 0 ? m : NewRanch.InitialMoney(scripts);
+        var ranch = NewRanch.Create(PlotLayout.Read(scripts, scene, zoneName), Expansions.Read(scripts, scene), money, names);
+        GD.Print($"New game: {money} newbucks, {ranch.Plots.Count} plot sites, {ranch.AccessDoors.Count} doors locked");
+        return From(scripts, names, ranch, "", zoneName);
+    }
+
+    private static SavedRanch From(GameScripts scripts, GameEnums names, RanchState ranch, string path, string zoneName)
+    {
         var scene = scripts.Assets.File("level3") ?? throw new IOException("level3 is missing.");
         var layout = PlotLayout.Read(scripts, scene, zoneName);
         var plots = layout.Place(ranch, names);
-        var (hidden, renderers, colliders) = layout.Build(plots);
+        // Every site's scene plot is hidden; RanchEconomy builds what stands there, site by site.
+        var hidden = layout.Sites.Select(s => s.ScenePlotObject).ToHashSet();
 
-        // The expansions the save has opened lose their barriers (a stand-in rule, see ExpansionBarriers).
+        // The expansions the save has opened lose their barriers (see ExpansionBarriers); the others
+        // are taken out of the zone by Apply and stand as their own nodes until bought.
         var barriers = ExpansionBarriers.Read(scripts, scene, zoneName, names);
         var opened = barriers.Where(b => ExpansionBarriers.IsOpen(b, ranch, names)).ToList();
         hidden.UnionWith(opened.Select(b => b.GameObject));
@@ -87,23 +107,11 @@ public sealed class SavedRanch
         // Each plot's saved crop stands on it; with the scene's own crops, their spawn joints hold produce.
         var cropPrefabs = PlotCrops.Read(scripts, scene);
         var plotCrops = plots.Select(cropPrefabs.On).OfType<CropSpawner>().ToList();
-        var (cropRenderers, cropColliders) = PlotCrops.Build(plotCrops);
-        renderers.AddRange(cropRenderers);
-        colliders.AddRange(cropColliders);
         var crops = plotCrops.Concat(PlotCrops.InScene(scripts, scene, zoneName, hidden)).ToList();
 
         // The ranch's cells are in the "HOME" region set (static analysis of Region.Awake and ZoneDirector.GetRegionSetId).
         var zone = ZoneRegions.Read(scripts, scene, zoneName, names.Value(GameEnum.RegionSet, "HOME"));
         var contents = plots.ToDictionary(p => p.Site.Id, p => PlotContents.Of(p.Plot, names));
-
-        // The prefabs were read through the scripts' own asset set, which closes with it.
-        AssetRef Rebase(AssetRef r) => new(assets.File(ExternalName(r.File.Path, install)) ?? throw new IOException($"{r.File.Path} is missing."), r.Info);
-        renderers = renderers.Select(r => r with
-        {
-            Mesh = Rebase(r.Mesh),
-            Materials = r.Materials.Select(m => m is { } a ? Rebase(a) : (AssetRef?)null).ToList(),
-        }).ToList();
-        colliders = colliders.Select(c => c with { Mesh = c.Mesh is { } m ? Rebase(m) : null }).ToList();
 
         var corrals = plots.Where(p => p.Prefab.Regions.Count > 0).ToList();
         var slimes = new List<SavedSlime>();
@@ -119,17 +127,19 @@ public sealed class SavedRanch
         }
 
         // The save keeps the player's feet and their view as Euler angles: pitch in x, yaw in y
-        // (docs/behavior/player-camera.md). Only a player in this zone's world and cells stands here.
+        // (docs/behavior/player-camera.md). Only a player in this zone's world and cells stands here;
+        // a new game's player starts at the zone's spawn.
         var p = ranch.Player.Position;
         var feet = new N.Vector3(p.X, p.Y, p.Z);
-        PlayerStart? player = ranch.Player.RegionSetId == zone.RegionSet && zone.Contains(feet)
+        PlayerStart? player = path.Length > 0 && ranch.Player.RegionSetId == zone.RegionSet && zone.Contains(feet)
             ? new PlayerStart(feet, ranch.Player.Rotation.X > 180 ? ranch.Player.Rotation.X - 360 : ranch.Player.Rotation.X, ranch.Player.Rotation.Y)
             : null;
 
         var state = new WorldState(ranch.Player.Progress, (float)ranch.Clock.Hour, Hidden: hidden);
-        return new SavedRanch(path, ranch, plots, state, renderers, colliders, slimes)
+        return new SavedRanch(path, ranch, plots, state, slimes)
         {
             OpenedBarriers = opened.Select(b => b.Path).ToList(),
+            Barriers = barriers,
             Crops = crops,
             Zone = zone,
             Contents = contents,
@@ -137,21 +147,35 @@ public sealed class SavedRanch
         };
     }
 
-    // The name an external reference would use for a file of the install's data folder.
-    private static string ExternalName(string filePath, GameInstall install)
+    /// <summary>
+    /// The zone without the expansion barriers still standing: their meshes and colliders (everything
+    /// under each barrier's object) are moved to <see cref="BarrierParts"/>, so that a barrier can be
+    /// lifted on its own when its expansion is bought. The plots are built site by site by RanchEconomy.
+    /// </summary>
+    public ZoneExtract Apply(ZoneExtract zone)
     {
-        var dir = Path.GetFullPath(Path.GetDirectoryName(filePath)!).TrimEnd('\\', '/');
-        var resources = Path.GetFullPath(Path.Combine(install.DataDirectory, "Resources")).TrimEnd('\\', '/');
-        var file = Path.GetFileName(filePath);
-        return string.Equals(dir, resources, System.StringComparison.OrdinalIgnoreCase) ? "Resources/" + file : file;
+        bool Under(string path, string root) => path == root || path.StartsWith(root + "/", System.StringComparison.Ordinal);
+        var standing = Barriers.Select(b => b.Path).Except(OpenedBarriers).Distinct().ToList();
+        var parts = new Dictionary<string, (List<RenderItem>, List<ColliderItem>)>();
+        foreach (var root in standing)
+            parts[root] = (zone.Renderers.Where(r => Under(r.Path, root)).ToList(), zone.Colliders.Where(c => Under(c.Path, root)).ToList());
+        BarrierParts = parts;
+        return zone with
+        {
+            Renderers = zone.Renderers.Where(r => !standing.Any(b => Under(r.Path, b))).ToList(),
+            Colliders = zone.Colliders.Where(c => !standing.Any(b => Under(c.Path, b))).ToList(),
+        };
     }
 
-    /// <summary>The zone with the saved plots in place of the scene's own (which <see cref="State"/> hid).</summary>
-    public ZoneExtract Apply(ZoneExtract zone) => zone with
-    {
-        Renderers = zone.Renderers.Concat(_renderers).ToList(),
-        Colliders = zone.Colliders.Concat(_colliders).ToList(),
-    };
+    /// <summary>Every expansion barrier of the zone, open or not.</summary>
+    public IReadOnlyList<ExpansionBarrier> Barriers { get; private init; } = [];
+
+    /// <summary>The meshes and colliders of each barrier still standing, by scene path, taken out of the zone by <see cref="Apply"/>.</summary>
+    public IReadOnlyDictionary<string, (List<RenderItem> Renderers, List<ColliderItem> Colliders)> BarrierParts { get; private set; } =
+        new Dictionary<string, (List<RenderItem>, List<ColliderItem>)>();
+
+    /// <summary>What the plots in play draw now (set by RanchEconomy), for the checks.</summary>
+    public System.Func<IEnumerable<RenderItem>>? LiveRenderers { get; set; }
 
     /// <summary>
     /// Gives milestone 2's world the save's money and puts the corral slimes and the zone's loose
