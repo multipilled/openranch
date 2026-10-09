@@ -6,6 +6,7 @@ using OpenRanch.Formats.Game;
 using OpenRanch.Formats.Scene;
 using OpenRanch.Game.World;
 using OpenRanch.Ranch;
+using OpenRanch.Simulation;
 using N = System.Numerics;
 
 namespace OpenRanch.Game.SaveLoad;
@@ -13,8 +14,12 @@ namespace OpenRanch.Game.SaveLoad;
 /// <summary>
 /// Milestone 3's check, run without a window (--save FILE --m3-check): The Ranch opened from a save has
 /// to hold what the save reader reports. Every plot site of the zone carries the saved plot type and
-/// none of the scene's own plots; the slimes the save keeps in the zone's corrals are all there, by
-/// type, and still inside a corral after a few seconds of physics; the wallet holds the saved money.
+/// none of the scene's own plots; each plot shows exactly the upgrade objects its saved upgrades
+/// switch on, and the crop the save planted on it; each plot keeps the save's contents (stores,
+/// feeder, collector, ash); the slimes the save keeps in the zone's corrals are all there, by type,
+/// and still inside a corral after a few seconds of physics; the zone's other actors are all there by
+/// type, the produce hanging from crops still hangs and nothing fell through the ground; the wallet
+/// holds the saved money. The save file is read again here, on its own, for the comparison.
 /// Prints a report and quits with 0 when everything matched, 1 otherwise.
 /// </summary>
 public partial class M3Check : Node
@@ -72,19 +77,124 @@ public partial class M3Check : Node
         var leftovers = _zone.Renderers.Count(r => r.Path.Contains("/landPlot/"));
         Check(leftovers == 0, $"scene plots left standing: {leftovers} meshes");
 
-        // Each plot has ground under its middle, at the site's height.
+        // Each plot has ground under its middle, at the site's height. A plot's crop stands on that
+        // middle, so on a planted plot the ray goes on past what it hits above the site's height.
         var space = _m2.GetWorld3D().DirectSpaceState;
         var floorless = new List<string>();
         foreach (var plot in _saved.Plots)
         {
             var at = UnityConvert.Position(plot.Site.PlotWorld.Translation);
-            var ray = PhysicsRayQueryParameters3D.Create(at + Vector3.Up * 3, at + Vector3.Down * 30, Slimes.Actor.WorldLayer);
-            var hit = space.IntersectRay(ray);
+            var planted = _saved.Crops.Any(c => c.Path.StartsWith(plot.Site.Id + "/", System.StringComparison.Ordinal));
+            var from = at + Vector3.Up * 3;
+            Godot.Collections.Dictionary hit;
+            do
+            {
+                hit = space.IntersectRay(PhysicsRayQueryParameters3D.Create(from, at + Vector3.Down * 30, Slimes.Actor.WorldLayer));
+                if (hit.Count > 0)
+                    from = hit["position"].AsVector3() + Vector3.Down * 0.01f;
+            } while (planted && hit.Count > 0 && hit["position"].AsVector3().Y - at.Y > 1.5f);
             if (hit.Count == 0 || Mathf.Abs(hit["position"].AsVector3().Y - at.Y) > 1.5f)
                 floorless.Add($"{plot.Site.Id} ({_names.PlotType(plot.Plot.Type)}) at {plot.Site.PlotWorld.Translation}: " +
                               (hit.Count == 0 ? "nothing below" : $"ground at {hit["position"].AsVector3().Y:F2}, {(hit["collider"].AsGodotObject() is Node n ? n.GetPath().ToString() : "?")}"));
         }
         Check(floorless.Count == 0, $"plots without ground under them: {floorless.Count}" + string.Concat(floorless.Take(5).Select(f => "\n         " + f)));
+
+        // A second, independent read of the save for the plots' upgrades, crops and contents and the loose actors.
+        var reader = RanchFiles.Read(_saved.FilePath);
+        Plot SavedPlot(PlacedPlot p) => reader.FindPlot(p.Site.Id) ?? p.Plot;
+        var pathsBySite = _zone.Renderers.Select(r => r.Path).GroupBy(p => p.Split('/')[0]).ToDictionary(g => g.Key, g => g.ToList());
+
+        // Upgrades: every object an upgrader of the plot points at is drawn exactly as the save's upgrades say.
+        var upgradeWrong = new List<string>();
+        int objectsOn = 0, objectsOff = 0;
+        var applied = new Dictionary<string, int>();
+        var ignored = new Dictionary<string, int>();
+        foreach (var plot in _saved.Plots)
+        {
+            var tree = plot.Prefab.Tree!;
+            var wanted = PlotUpgrades.Apply(plot.Prefab.Upgraders, SavedPlot(plot).Upgrades, _names);
+            foreach (var u in wanted.Applied)
+                applied[u] = applied.GetValueOrDefault(u) + 1;
+            foreach (var u in wanted.Ignored)
+                ignored[u] = ignored.GetValueOrDefault(u) + 1;
+            var paths = pathsBySite.GetValueOrDefault(plot.Site.Id) ?? [];
+            foreach (var target in plot.Prefab.Upgraders.SelectMany(u => u.Targets.Values.SelectMany(t => t)).Distinct())
+            {
+                var obj = tree.Objects[target];
+                bool Under(string path, string root) => path == root || path.StartsWith(root + "/", System.StringComparison.Ordinal);
+                var meshes = tree.Renderers.Where(r => Under(r.Item.Path, obj.Path)).ToList();
+                if (meshes.Count == 0)
+                    continue;
+                var want = meshes.Count(r => tree.IsOn(r.Chain, wanted.Switched));
+                var have = paths.Count(p => Under(p, $"{plot.Site.Id}/{plot.Prefab.Name}/{obj.Path}"));
+                if (want != have)
+                    upgradeWrong.Add($"{plot.Site.Id} {obj.Path}: {have} meshes drawn, the save's upgrades want {want}");
+                if (want > 0)
+                    objectsOn++;
+                else
+                    objectsOff++;
+            }
+        }
+        Check(upgradeWrong.Count == 0 && objectsOn + objectsOff > 0,
+            $"plot upgrades: {objectsOn} upgrade objects drawn and {objectsOff} not, as the save says; applied {Describe(applied)}" +
+            (ignored.Count > 0 ? $"; no upgrader for {Describe(ignored)}" : "") + string.Concat(upgradeWrong.Take(5).Select(w => "\n         " + w)));
+
+        // Crops: the crop each plot's save names stands on it.
+        var none = _names.Value(GameEnum.SpawnResource, "NONE");
+        var cropByPrefab = _saved.Crops.Where(c => c.Prefab is not null).Select(c => c.Prefab!).DistinctBy(c => c.Name)
+            .ToDictionary(c => c.Name, c => _names.Name(GameEnum.SpawnResource, c.Id));
+        var cropsWanted = _saved.Plots.Where(p => SavedPlot(p).AttachedResource != none)
+            .Select(p => $"{p.Site.Id} {_names.Name(GameEnum.SpawnResource, SavedPlot(p).AttachedResource)}").ToHashSet();
+        var cropsBuilt = _zone.Renderers.Select(r => r.Path.Split('/'))
+            .Where(parts => parts.Length > 2 && siteIds.Contains(parts[0]) && cropByPrefab.ContainsKey(parts[1]))
+            .Select(parts => $"{parts[0]} {cropByPrefab[parts[1]]}").ToHashSet();
+        Check(cropsWanted.SetEquals(cropsBuilt),
+            $"crops on plots: {Describe(Count(cropsBuilt.Select(c => c.Split(' ')[1])))}; save {Describe(Count(cropsWanted.Select(c => c.Split(' ')[1])))}" +
+            string.Concat(cropsWanted.Except(cropsBuilt).Concat(cropsBuilt.Except(cropsWanted)).Take(5).Select(c => "\n         differs: " + c)));
+
+        // Contents: each plot keeps what the save stores for it.
+        var contentsWrong = new List<string>();
+        var stored = new Dictionary<string, int>();
+        foreach (var plot in _saved.Plots)
+        {
+            var want = PlotContents.Of(SavedPlot(plot), _names);
+            var have = _saved.Contents.GetValueOrDefault(plot.Site.Id);
+            if (have is null || !SameContents(want, have))
+                contentsWrong.Add($"{plot.Site.Id} {want.Type}");
+            foreach (var (item, n) in have?.StoredByItem ?? new Dictionary<string, int>())
+                stored[item] = stored.GetValueOrDefault(item) + n;
+        }
+        var feeders = _saved.Contents.Values.Count(c => c.Feeder.PendingCount > 0);
+        var ash = _saved.Contents.Values.Sum(c => c.Ash);
+        Check(contentsWrong.Count == 0,
+            $"plot contents on {_saved.Plots.Count} plots: stored {Describe(stored)}; {feeders} feeders with drops queued; ash {ash:F1}" +
+            string.Concat(contentsWrong.Take(5).Select(w => "\n         differs: " + w)));
+
+        // Loose actors: everything but slimes inside the zone's cells, by type.
+        var looseWanted = Count(reader.Actors.Where(_saved.Zone.Contains).Select(a => _names.Item(a.TypeId))
+            .Where(id => Items.KindOf(id) is not (ItemKind.Slime or ItemKind.Largo)));
+        var looseSpawned = Count(_saved.SpawnedLoose.Select(s => s.Saved.Id));
+        Check(looseWanted.Count > 0 && Same(looseWanted, looseSpawned),
+            $"loose actors in the zone: {looseSpawned.Values.Sum()} spawned ({Describe(looseSpawned)}); save {looseWanted.Values.Sum()}");
+
+        // Produce on crops: the produce the save left growing hangs from its crop's joints, and stays there.
+        var hasCycle = (string id) => _m2.Catalog.Prefabs.Has(id) && _m2.Catalog.Prefabs.Get(id).RootScript("ResourceCycle") is not null;
+        var onJoints = ZoneActors.Of(reader, _saved.Zone, _names, _saved.Crops, hasCycle).Where(a => a.Joint is not null).ToList();
+        var hold = _saved.Hold!;
+        var hanging = hold.Hanging.ToHashSet();
+        var heldSpawns = _saved.SpawnedLoose.Where(s => s.Saved.Joint is not null).ToList();
+        var picked = heldSpawns.Count(s => !GodotObject.IsInstanceValid(s.Actor) || s.Actor.Consumed);
+        var moved = heldSpawns.Where(s => hanging.Contains(s.Actor) && N.Vector3.Distance(Unity(s.Actor.GlobalPosition), s.Saved.Position) > 0.01f).ToList();
+        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count + picked == onJoints.Count && moved.Count == 0,
+            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging, {picked} eaten; " +
+            $"save {onJoints.Count} ({onJoints.Count(a => a.Unripe)} unripe); {moved.Count} moved");
+
+        // Nothing loose fell through the ground; what slimes ate is reported.
+        var looseLive = _saved.SpawnedLoose.Where(s => s.Saved.Joint is null && GodotObject.IsInstanceValid(s.Actor) && !s.Actor.Consumed).ToList();
+        var fell = looseLive.Where(s => s.Actor.GlobalPosition.Y < s.Saved.Position.Y - 5).ToList();
+        var eaten = _saved.SpawnedLoose.Count(s => s.Saved.Joint is null) - looseLive.Count;
+        Check(fell.Count == 0, $"loose actors fallen more than 5 m after {SettleSeconds} s: {fell.Count} ({looseLive.Count} still there, {eaten} eaten or sold)" +
+                               string.Concat(fell.Take(5).Select(s => $"\n         {s.Saved.Id} saved at {s.Saved.Position}, now {Unity(s.Actor.GlobalPosition)}")));
 
         // Corral slimes: everything the save keeps in a corral, by type, and still in a corral now.
         var saved = _saved.CorralSlimes.GroupBy(s => s.Id).ToDictionary(g => g.Key, g => g.Count());
@@ -110,6 +220,14 @@ public partial class M3Check : Node
     }
 
     private static N.Vector3 Unity(Vector3 v) => new(v.X, v.Y, -v.Z);
+
+    private static Dictionary<string, int> Count(IEnumerable<string> ids) => ids.GroupBy(i => i).ToDictionary(g => g.Key, g => g.Count());
+
+    private static bool SameContents(PlotContents a, PlotContents b) =>
+        a.Type == b.Type && a.Crop == b.Crop && a.CropDeathTime == b.CropDeathTime && a.Feeder == b.Feeder
+        && a.CollectorNextTime == b.CollectorNextTime && a.Ash == b.Ash && a.SlotSelections.SequenceEqual(b.SlotSelections)
+        && a.Storage.Count == b.Storage.Count
+        && a.Storage.All(kv => b.Storage.TryGetValue(kv.Key, out var slots) && slots.SequenceEqual(kv.Value));
 
     private static bool Same(Dictionary<string, int> a, Dictionary<string, int> b) =>
         a.Count == b.Count && a.All(kv => b.TryGetValue(kv.Key, out var n) && n == kv.Value);
