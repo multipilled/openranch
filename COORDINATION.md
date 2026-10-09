@@ -6,8 +6,8 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 | Area | Owner session | Worktree / branch |
 |---|---|---|
-| game/scripts/SaveLoad (except SaveWriter*); src/OpenRanch.Ranch/PlotLayout.cs and new plot/actor files there; tests/OpenRanch.Ranch.Tests (new files); small hooks in game/scripts/Ranch.cs | SR M3: plot upgrades, contents and loose actors (planned) | openranch-m3plots / m3-plots |
-| new files src/OpenRanch.Ranch/RanchWriter*.cs, game/scripts/SaveLoad/SaveWriter*.cs, tests for them; a save key/flag hook in game/scripts/Ranch.cs | SR M3: save the live ranch back (planned) | openranch-m3save / m3-save |
+| game/scripts/SaveLoad (except SaveWriter*); src/OpenRanch.Ranch/PlotLayout.cs and new plot/actor files there; tests/OpenRanch.Ranch.Tests (new files); small hooks in game/scripts/Ranch.cs | SR M3: plot upgrades, contents and loose actors (running) | openranch-m3plots / m3-plots |
+| new files src/OpenRanch.Ranch/RanchWriter*.cs, game/scripts/SaveLoad/SaveWriter*.cs, tests for them; a save key/flag hook in game/scripts/Ranch.cs | SR M3: save the live ranch back (running) | openranch-m3save / m3-save |
 | game/scripts/World/WorldLighting.cs and new files in game/scripts/World (world clock); sky and fog shaders in game/shaders (not the landscape or paint shaders); docs/behavior/day-and-night.md and day-cycle.md; a small clock hook in game/scripts/Ranch.cs | SR day cycle in game | openranch-daycycle / day-cycle |
 | (paused, not merged: clean-room redo pending) landscape and paint shaders | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
 | README.md, OpenRanch.sln (except adding your own new projects), COORDINATION.md, UNVERIFIED.md structure, tools/, merges | coordinator (SR workstreams) | main checkout |
@@ -19,9 +19,9 @@ tests 105/105). M3 is done when a save loads fully and the live ranch saves back
 
 | P | Task | Owner | Status | Done-check |
 |---|---|---|---|---|
-| P2 | Day cycle in game: running world clock drives sun, sky, fog and night-only objects; starts at the save's world time | SR day cycle in game (openranch-daycycle) | proposed | headless `--day-check`: clock advances at `secsPerGameDay`, lighting at 4 hours matches the zone settings, night-only objects toggle at the data's hours; collision 40/40 |
-| P2 | M3 plots: saved plot upgrades switched on (prefab upgrade children), plot contents (crops, chickens, silo), loose actors (food, plorts, chickens) from the save | SR M3 plots (openranch-m3plots) | proposed | `--m3-check` extended: upgrades and actor counts by id match the save reader on Game2_4; PASS twice |
-| P2 | M3 save back: write the live ranch (money, world time, plots, slimes, actors) to `.ranch.json`; reload gives the same state | SR M3 save (openranch-m3save) | proposed | `--save X --save-out Y` then `--save Y --m3-check` PASS; writer unit tests round-trip |
+| P2 | Day cycle in game: running world clock drives sun, sky, fog and night-only objects; starts at the save's world time | SR day cycle in game (openranch-daycycle) | running | headless `--day-check`: clock advances at `secsPerGameDay`, lighting at 4 hours matches the zone settings, night-only objects toggle at the data's hours; collision 40/40 |
+| P2 | M3 plots: saved plot upgrades switched on (prefab upgrade children), plot contents (crops, chickens, silo), loose actors (food, plorts, chickens) from the save | SR M3 plots (openranch-m3plots) | running | `--m3-check` extended: upgrades and actor counts by id match the save reader on Game2_4; PASS twice |
+| P2 | M3 save back: write the live ranch (money, world time, plots, slimes, actors) to `.ranch.json`; reload gives the same state | SR M3 save (openranch-m3save) | running | `--save X --save-out Y` then `--save Y --m3-check` PASS; writer unit tests round-trip |
 | P3 | Render redo, clean room: landscape/paint look from behaviour notes, not translated shaders. m1-render-polish is NEVER merged | unassigned | paused | 5 reference spots closer than now; UNVERIFIED rows closed with sources |
 | P3 | Expansion purchase flow (barriers stay solid without `--save`; nothing lifts them yet) | unassigned | later (M4) | buy an expansion in game, barrier lifts, saved |
 | P3 | Slime ids with no M2 catalog prefab are skipped; `SavedRanch.Load` opens a second GameScripts | unassigned | later | none skipped on all 15 saves; one load |
