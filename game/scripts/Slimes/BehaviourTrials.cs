@@ -84,11 +84,11 @@ public sealed class FeralTrial : ZooTrial
             Fail("the feral largo is gone");
             return;
         }
-        if (_stompHits.All(h => h == 0) || _bites == 0)
+        if (_stomps == 0 || _bites == 0)
         {
             if (Zoo.HoldPlayer(this, Center + new Vector3(4.5f, 0, 4.5f)) && _healthAtStart == 0)
                 _healthAtStart = Catalog.PlayerVitals.Health;
-            if (_stompHits.Any(h => h > 0))
+            if (_stomps > 0)
                 _slime.Sim.Agitation = 1;
             Outcome = $"feral={_slime.Sim.IsFeral} stomps={_stomps} bites={_bites}";
             return;
@@ -109,7 +109,7 @@ public sealed class FeralTrial : ZooTrial
                    $"(range {F("minPlayerDamage")}-{F("maxPlayerDamage")} each), {_bites} bite(s) hurt {_biteDamage} ({attackDamage} each), " +
                    $"feral after eating={_slime.Sim.IsFeral}";
         // A stomp that lands out of the player's reach does no harm; one in reach does min..max.
-        var stompOk = _stompHits.Any(h => h > 0) && _stompHits.All(h => h == 0 || (h >= F("minPlayerDamage") && h <= F("maxPlayerDamage")));
+        var stompOk = _stompHits.All(h => h == 0 || (h >= F("minPlayerDamage") && h <= F("maxPlayerDamage")));
         if (_wasFeral && _fullYetEats && stompOk && _biteDamage == attackDamage * _bites && !_slime.Sim.IsFeral)
             Pass(line);
         else

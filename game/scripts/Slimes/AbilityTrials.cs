@@ -100,7 +100,7 @@ public static class AbilityTrials
         // Boom: explodes with its prefab's power and radius; the player 3.5 m away is hurt min..max; a plort is pushed.
         yield return new AbilityTrial<BoomExplode>("BOOM", "BOOM_SLIME", new Vector3(1.5f, 0, 0))
         {
-            Setup = t => t.Place("PINK_PLORT", t.Center + new Vector3(-2f, 0, 2f)),
+            Setup = t => t.Place("CARROT_VEGGIE", t.Center + new Vector3(-2f, 0, 2f)), // not a plort: it would turn into a largo
             Before = t => { if (!t.Notes.ContainsKey("due")) { t.Notes["due"] = true; t.Piece.DueNow(); } },
             Verdict = t =>
             {

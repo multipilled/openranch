@@ -95,11 +95,12 @@ public sealed class Slime
     /// Feeds the slime. Returns <see cref="Meal.None"/> if it won't eat that now; otherwise the items
     /// it produces after <see cref="DigestSeconds"/>. <paramref name="swallowed"/> is false when the bite
     /// only hurt the food (a slime with health left, bitten by a tarr): the bite still counts for hunger
-    /// and agitation, but nothing comes out (static analysis of SlimeEat).
+    /// and agitation, but nothing comes out (static analysis of SlimeEat). <paramref name="ignoreMood"/>
+    /// feeds it anything in its diet however full or calm (a chomp that ignores emotions).
     /// </summary>
-    public Meal Feed(string food, bool swallowed = true)
+    public Meal Feed(string food, bool swallowed = true, bool ignoreMood = false)
     {
-        if (!WillEat(food))
+        if (ignoreMood ? Species.FoodEffect(food) is null : !WillEat(food))
             return Meal.None;
         var effect = Species.FoodEffect(food)!;
         // Every eat rule that matches the food counts as a meal: a largo's food matches one rule per

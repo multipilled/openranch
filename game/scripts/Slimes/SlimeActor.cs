@@ -447,9 +447,16 @@ public partial class SlimeActor : Actor
 
     // Starts a bite when the slime touches food it will eat now; the food is gone after the bite and
     // the products pop out after digesting (docs/behavior/slimes.md, "In the world: eating").
-    private bool TryEat(Actor food)
+    /// <summary>
+    /// Bites <paramref name="food"/> whatever its mood, if it is in its diet (the original's chomp with
+    /// emotions ignored: a lucky slime hit by a chicken). False if it can't bite now.
+    /// </summary>
+    public bool Chomp(Actor food) => TryEat(food, ignoreMood: true);
+
+    private bool TryEat(Actor food, bool ignoreMood = false)
     {
-        if (_busy || food.Consumed || food.CaughtBy is not null || !food.Edible || !Sim.WillEat(food.Id))
+        if (_busy || food.Consumed || food.CaughtBy is not null || !food.Edible
+            || (ignoreMood ? Sim.Species.FoodEffect(food.Id) is null : !Sim.WillEat(food.Id)))
             return false;
         _busy = true;
         // A slime with health (bitten by a tarr) is only swallowed once a bite takes the last of it.
@@ -463,7 +470,7 @@ public partial class SlimeActor : Actor
                 food.Finish();
             if (!IsInstanceValid(this) || Consumed)
                 return;
-            var meal = Sim.Feed(food.Id, swallowed);
+            var meal = Sim.Feed(food.Id, swallowed, ignoreMood);
             _busy = false;
             Feral?.DidEat();
             Ate?.Invoke(this, food.Id);

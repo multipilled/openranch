@@ -283,8 +283,16 @@ public sealed class Gather : SlimeBehaviour
             }
             return;
         }
-        // In its mouth: just in front of it.
-        _item.GlobalPosition = Slime.GlobalPosition + Slime.Forward * (Slime.Radius + _item.Radius) + Vector3.Up * 0.1f;
+        // In its mouth: just in front of it. Anything solid in between (a wall) breaks the hold, as the
+        // original's mouth joint would.
+        var mouth = Slime.GlobalPosition + Slime.Forward * (Slime.Radius + _item.Radius) + Vector3.Up * 0.1f;
+        if (Slime.Ray(Slime.GlobalPosition, mouth + Slime.Forward * _item.Radius, Actor.WorldLayer | Actor.PenWallLayer).Count > 0)
+        {
+            Drop();
+            _item = null;
+            return;
+        }
+        _item.GlobalPosition = mouth;
         if (Slime.GlobalPosition.DistanceSquaredTo(_goal.GlobalPosition) <= Gathering.DropDistance * Gathering.DropDistance)
         {
             LastCarried = _item.Id;
@@ -405,11 +413,11 @@ public sealed class LuckyCoins : SlimeBehaviour
 
     public override void Touched(Node body)
     {
-        if (body is not Actor a || Items.KindOf(a.Id) is not (ItemKind.Meat or ItemKind.Chick) || a.Consumed || !_hitBy.Add(a.GetInstanceId()))
+        if (body is not Actor a || Items.KindOf(a.Id) is not (ItemKind.Meat or ItemKind.Chick) || !_hitBy.Add(a.GetInstanceId()))
             return;
         if ((a.LinearVelocity - Slime.LinearVelocity).Length() <= LuckySlime.HitThreshold)
             return;
-        a.Consume(); // gobbled whatever its mood
+        Slime.Chomp(a); // gobbled whatever its mood (unless it is already eating it)
         var bundles = _lastBundles = LuckySlime.Bundles(_lastBundles);
         Slime.GetTree().CreateTimer(LuckySlime.HopDelay, processAlways: false, processInPhysics: true).Timeout += () =>
         {
