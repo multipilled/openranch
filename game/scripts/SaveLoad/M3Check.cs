@@ -77,14 +77,14 @@ public partial class M3Check : Node
         var leftovers = _zone.Renderers.Count(r => r.Path.Contains("/landPlot/"));
         Check(leftovers == 0, $"scene plots left standing: {leftovers} meshes");
 
-        // Each plot has ground under its middle, at the site's height. A plot's crop stands on that
-        // middle, so on a planted plot the ray goes on past what it hits above the site's height.
+        // Each plot has ground under its middle, at the site's height. Some plots stand something on
+        // that middle (a crop, the incinerator's pit), so the ray, which starts 3 m up, goes on past
+        // what it hits more than 1.5 m above the site.
         var space = _m2.GetWorld3D().DirectSpaceState;
         var floorless = new List<string>();
         foreach (var plot in _saved.Plots)
         {
             var at = UnityConvert.Position(plot.Site.PlotWorld.Translation);
-            var planted = _saved.Crops.Any(c => c.Path.StartsWith(plot.Site.Id + "/", System.StringComparison.Ordinal));
             var from = at + Vector3.Up * 3;
             Godot.Collections.Dictionary hit;
             do
@@ -92,7 +92,7 @@ public partial class M3Check : Node
                 hit = space.IntersectRay(PhysicsRayQueryParameters3D.Create(from, at + Vector3.Down * 30, Slimes.Actor.WorldLayer));
                 if (hit.Count > 0)
                     from = hit["position"].AsVector3() + Vector3.Down * 0.01f;
-            } while (planted && hit.Count > 0 && hit["position"].AsVector3().Y - at.Y > 1.5f);
+            } while (hit.Count > 0 && hit["position"].AsVector3().Y - at.Y > 1.5f);
             if (hit.Count == 0 || Mathf.Abs(hit["position"].AsVector3().Y - at.Y) > 1.5f)
                 floorless.Add($"{plot.Site.Id} ({_names.PlotType(plot.Plot.Type)}) at {plot.Site.PlotWorld.Translation}: " +
                               (hit.Count == 0 ? "nothing below" : $"ground at {hit["position"].AsVector3().Y:F2}, {(hit["collider"].AsGodotObject() is Node n ? n.GetPath().ToString() : "?")}"));
@@ -201,7 +201,11 @@ public partial class M3Check : Node
         var live = _saved.Spawned.Where(GodotObject.IsInstanceValid).Where(a => !a.Consumed).ToList();
         var spawned = live.GroupBy(a => a.Id).ToDictionary(g => g.Key, g => g.Count());
         var allSlimes = RanchCensus.Of(ranch).Slimes(_names).Values.Sum();
-        Check(saved.Count > 0 && Same(saved, spawned),
+        // The independent read decides whether the corrals should hold any slimes at all.
+        var corralPlots = _saved.Plots.Where(p => p.Prefab.Regions.Count > 0).ToList();
+        var inCorrals = reader.Actors.Count(a => Items.KindOf(_names.Item(a.TypeId)) is ItemKind.Slime or ItemKind.Largo
+                                                 && corralPlots.Any(p => p.Contains(new N.Vector3(a.Position.X, a.Position.Y, a.Position.Z))));
+        Check(saved.Values.Sum() == inCorrals && Same(saved, spawned),
             $"corral slimes: {Describe(spawned)}; save {Describe(saved)} ({allSlimes} slimes in the whole save)");
         var corrals = _saved.Plots.Where(p => p.Prefab.Regions.Count > 0).ToList();
         var escaped = live.Where(a => !corrals.Any(p => p.Contains(Unity(a.GlobalPosition)))).ToList();
