@@ -43,7 +43,7 @@ public sealed class FeralTrial : ZooTrial
     private string? _food;
     private int _stomps, _stompDamage, _biteDamage, _bites;
     private readonly List<int> _stompHits = [];
-    private string? _fell, _lastDoing;
+    private string? _fell, _lastDoing, _spike;
     private Vector3 _lastPos, _lastVelocity;
     private float _healthAtStart;
     private bool _wasFeral, _fullYetEats, _fed;
@@ -89,6 +89,9 @@ public sealed class FeralTrial : ZooTrial
         // Diagnostics: where and how it left the floor, if it does.
         if (_fell is null && _slime.GlobalPosition.Y < Center.Y - 3)
             _fell = $"fell off at {Time:F1} s from {_lastPos - Center:F1} (pen-relative) doing {_lastDoing}, velocity {_lastVelocity:F1}, stomps {_stomps}";
+        if (_spike is null && _slime.LinearVelocity.Length() > 40)
+            _spike = $"speed {_slime.LinearVelocity.Length():F0} at {Time:F2} s (was {_lastVelocity.Length():F1}) doing {_slime.Doing}/{_slime.Behaviour<FeralStompBehaviour>()?.Phase}, " +
+                     $"touching [{string.Join(",", _slime.GetCollidingBodies().Select(b => b.Name.ToString()))}], at {_slime.GlobalPosition - Center:F1}";
         (_lastPos, _lastDoing, _lastVelocity) = (_slime.GlobalPosition, _slime.Doing, _slime.LinearVelocity);
         if (_stomps == 0 || _bites == 0)
         {
@@ -125,7 +128,7 @@ public sealed class FeralTrial : ZooTrial
     public override string TimedOut() => _slime is null || !GodotObject.IsInstanceValid(_slime) ? Outcome
         : $"{Outcome}; doing {_slime.Doing}, agitation {_slime.Sim.Agitation:F2}, grounded={_slime.Grounded}, " +
           $"{(Catalog.Player is { } p ? _slime.GlobalPosition.DistanceTo(p.GlobalPosition) : -1):F1} m from the player, " +
-          $"{_slime.GlobalPosition.DistanceTo(Center):F1} m from the pen centre, stomp damage [{string.Join(",", _stompHits)}]; {_fell ?? "never fell"}";
+          $"{_slime.GlobalPosition.DistanceTo(Center):F1} m from the pen centre, stomp damage [{string.Join(",", _stompHits)}]; {_fell ?? "never fell"}; {_spike ?? "no speed spike"}";
 }
 
 /// <summary>

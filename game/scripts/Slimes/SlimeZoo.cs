@@ -27,7 +27,7 @@ namespace OpenRanch.Game.Slimes;
 public partial class SlimeZoo : Node3D
 {
     private const double RefeedSeconds = 60;
-    private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TimeoutSeconds = 300;
+    private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TrialWallThickness = 1f, TimeoutSeconds = 300;
     private const string FormingSlime = "PINK_SLIME", FirstPlort = "ROCK_PLORT", ThirdPlort = "TABBY_PLORT";
 
     private sealed class Pen
@@ -140,9 +140,9 @@ public partial class SlimeZoo : Node3D
         var eatCorner = center + new Vector3(-width / 2, 0, -depth / 2);
         var trialCorner = eatCorner + new Vector3(eatWidth, 0, 0);
         if (count > 0)
-            BuildWalls(eatCorner, PenSize, columns, rows);
+            BuildWalls(eatCorner, PenSize, columns, rows, WallThickness);
         if (_trials.Count > 0)
-            BuildWalls(trialCorner, TrialPenSize, trialColumns, trialRows);
+            BuildWalls(trialCorner, TrialPenSize, trialColumns, trialRows, TrialWallThickness); // thick: leaping slimes tunnel through thin ones
 
         Vector3 PenCenter(int i) => eatCorner + new Vector3((i % columns + 0.5f) * PenSize, 0, (i / columns + 0.5f) * PenSize);
         for (var i = 0; i < slimes.Count; i++)
@@ -291,16 +291,16 @@ public partial class SlimeZoo : Node3D
     }
 
     // Items-only walls between pens of one grid, from its corner (lowest x and z).
-    private void BuildWalls(Vector3 corner, float penSize, int columns, int rows)
+    private void BuildWalls(Vector3 corner, float penSize, int columns, int rows, float thickness)
     {
         var (width, depth) = (columns * penSize, rows * penSize);
         var walls = new StaticBody3D { Name = "ZooWalls", CollisionLayer = Actor.PenWallLayer, CollisionMask = 0 };
         void Wall(Vector3 at, Vector3 wallSize) =>
             walls.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = wallSize }, Position = at + Vector3.Up * (WallHeight / 2) });
         for (var c = 0; c <= columns; c++)
-            Wall(corner + new Vector3(c * penSize, 0, depth / 2), new Vector3(WallThickness, WallHeight, depth));
+            Wall(corner + new Vector3(c * penSize, 0, depth / 2), new Vector3(thickness, WallHeight, depth));
         for (var r = 0; r <= rows; r++)
-            Wall(corner + new Vector3(width / 2, 0, r * penSize), new Vector3(width, WallHeight, WallThickness));
+            Wall(corner + new Vector3(width / 2, 0, r * penSize), new Vector3(width, WallHeight, thickness));
         AddChild(walls);
     }
 

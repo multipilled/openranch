@@ -25,6 +25,8 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
     /// <summary>Called every step before it fires (to make it due once the player is in place, for instance).</summary>
     public Action<AbilityTrial<T>>? Before { get; init; }
     public required Func<AbilityTrial<T>, (bool Ok, string Line)?> Verdict { get; init; }
+    /// <summary>The slime may be gone when the verdict is asked (the verdict mustn't touch it then).</summary>
+    public bool MayVanish { get; init; }
     public readonly Dictionary<string, object> Notes = [];
 
     public AbilityTrial(string name, string slimeId, Vector3? playerAt = null, string group = "abilities") : base(name, group)
@@ -60,7 +62,11 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
             return;
         if (!GodotObject.IsInstanceValid(Slime) || Slime.Consumed)
         {
-            Finish(false, $"{_slimeId} is gone ({LastLine ?? "never fired"})");
+            // Some pieces end with the slime gone (a gold slime vanishing as it flees): their verdict decides.
+            if (MayVanish && Piece.Fires > 0 && Verdict(this) is { } last)
+                Finish(last.Ok, last.Line);
+            else
+                Finish(false, $"{_slimeId} is gone ({LastLine ?? "never fired"})");
             return;
         }
         if (_playerAt is { } at && !HasPlayer)
@@ -321,8 +327,9 @@ public static class AbilityTrials
             Verdict = t => (t.Piece.LastCarried is not null && t.Piece.LastCarryDistance > 1f, t.LastLine!),
         };
 
-        yield return new AbilityTrial<GoldRunner>("GOLD", "GOLD_SLIME", new Vector3(-4f, 0, 0), group: "feeding")
+        yield return new AbilityTrial<GoldRunner>("GOLD", "GOLD_SLIME", new Vector3(-5.5f, 0, 0), group: "feeding")
         {
+            MayVanish = true,
             Before = t =>
             {
                 if (t.Notes.ContainsKey("thrown") || t.Slime.Age < SlimeMotion.StartDelaySeconds)

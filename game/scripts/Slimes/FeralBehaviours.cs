@@ -176,6 +176,8 @@ public sealed class FeralStompBehaviour : SlimeBehaviour
         (_power, _radius, _minDamage, _maxDamage) = (F("explodePower"), F("explodeRadius"), F("minPlayerDamage"), F("maxPlayerDamage"));
     }
 
+    /// <summary>Where the stomp is (for check reports).</summary>
+    public string Phase => _mode.ToString();
     /// <summary>Stomps done (for checks).</summary>
     public int Stomps { get; private set; }
     public event Action<Explosions.Result>? Stomped;
