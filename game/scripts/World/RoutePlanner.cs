@@ -132,8 +132,9 @@ public static class RoutePlanner
             }
             var here = Point(node);
             var g = cost[node];
-            for (var dx = -1; dx <= 1; dx++)
-                for (var dz = -1; dz <= 1; dz++)
+            // Neighbours up to two columns away: a hop (on foot or with a jetpack burst) over a narrow steep crest.
+            for (var dx = -2; dx <= 2; dx++)
+                for (var dz = -2; dz <= 2; dz++)
                 {
                     if (dx == 0 && dz == 0)
                         continue;
@@ -182,6 +183,26 @@ public static class RoutePlanner
         var c = Point(closest);
         GD.Print($"route: {cost.Count} floors reached from ({Point(start).X:F0}, {Point(start).Y:F0}, {Point(start).Z:F0}); " +
                  $"closest to the goal ({goalPoint.X:F0}, {goalPoint.Y:F0}, {goalPoint.Z:F0}) was ({c.X:F0}, {c.Y:F0}, {c.Z:F0}), {closestD:F0} m away");
+        // What stops the capsule around the closest floor: 4 m sweeps in eight directions, with the body each one hits.
+        for (var d = 0; d < 8; d++)
+        {
+            var angle = d * MathF.PI / 4;
+            var a = new Vector3(c.X, c.Y + Lift, -c.Z);
+            var b = a + new Vector3(MathF.Cos(angle), 0, -MathF.Sin(angle)) * 4;
+            sweep.Transform = new Transform3D(Basis.Identity, a + new Vector3(0, body.Height / 2, 0));
+            sweep.Motion = b - a;
+            var fractions = space.CastMotion(sweep);
+            var what = "";
+            if (fractions[0] < 1)
+            {
+                sweep.Transform = new Transform3D(Basis.Identity, a + new Vector3(0, body.Height / 2, 0) + sweep.Motion * fractions[1]);
+                sweep.Motion = Vector3.Zero;
+                var rest = space.GetRestInfo(sweep);
+                if (rest.Count > 0 && GodotObject.InstanceFromId((ulong)(long)rest["collider_id"]) is Node hit)
+                    what = $" by {hit.GetPath()} at ({((Vector3)rest["point"]).X:F1}, {((Vector3)rest["point"]).Y:F1}, {-((Vector3)rest["point"]).Z:F1})";
+            }
+            GD.Print($"route: from the closest floor towards +x turned {d * 45} degrees: {fractions[0] * 4:F1} m clear{what}");
+        }
         // Where the search got to, 3 x 3 columns per letter: 'o' reached, '-' floors not reached, ' ' no floor.
         GD.Print($"route: reached map, x {minX:F0} at the left, z {minZ + (nz - 1) * step:F0} at the top, {3 * step} m per letter");
         var reached = cost.Keys.Select(k => (k.Item1 / 3, k.Item2 / 3)).ToHashSet();
