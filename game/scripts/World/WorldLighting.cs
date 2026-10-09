@@ -25,7 +25,7 @@ public partial class WorldLighting : Node
 
     private readonly SceneLighting _scene;
     private readonly IReadOnlyDictionary<int, ZoneAmbience> _zones;
-    private readonly IReadOnlyList<CaveVolume> _caves;
+    private IReadOnlyList<CaveVolume> _caves;
     private float _hour;
     private readonly ProceduralSkyMaterial _sky = new() { SunAngleMax = 0 };
     private readonly Godot.Environment _environment;
@@ -41,7 +41,7 @@ public partial class WorldLighting : Node
     private int _caveZone = -1;
     // The world cells and the zone settings outside caves: the cells' zone at the camera, reached from the
     // settings it last showed over TransitionSeconds (docs/behavior/zones.md).
-    private readonly IReadOnlyList<CellArea> _cells;
+    private IReadOnlyList<CellArea> _cells;
     private int _outsideZone = ZoneAmbience.DefaultZone;
     private ZoneAmbience? _outsideFrom;
     private float _outsideBlend = 1;
@@ -127,6 +127,18 @@ public partial class WorldLighting : Node
             _caveLights.Add((light, energy, controller));
         }
         return light;
+    }
+
+    /// <summary>
+    /// Switches the cells and cave volumes the lighting follows, for a world whose live area changes (a new region set
+    /// after a teleport, World/WorldMap.cs). The settings showing now blend to the new area's over the transition time.
+    /// </summary>
+    public void SetArea(IReadOnlyList<CellArea> cells, IReadOnlyList<CaveVolume> caves)
+    {
+        _cells = cells;
+        _caves = caves;
+        foreach (var path in _caveAmount.Keys.Where(p => caves.All(c => c.Path != p)).ToList())
+            _caveAmount.Remove(path);
     }
 
     /// <summary>Draws the fog from this camera and starts the lighting where the camera is.</summary>

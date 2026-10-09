@@ -62,9 +62,11 @@ public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderer
 /// A zone root split the way the game loads it (docs/behavior/zones.md, "Joining the zones"): what is always
 /// there while the zone's region set is live (<see cref="Always"/>, which also lists every cell, teleport
 /// destination, cave and kill volume of the zone), and each cell's own objects (<see cref="Regions"/>), which load
-/// and unload with the cell. <see cref="Zone"/> is the zone id of the root's <c>ZoneDirector</c> (ZoneDirector.Zone).
+/// and unload with the cell. <see cref="Zone"/> is the zone id of the root's <c>ZoneDirector</c> (ZoneDirector.Zone);
+/// <see cref="PlotSites"/> counts its land plot sites (<c>LandPlotLocation</c>), where a save's plots stand.
 /// </summary>
-public sealed record ZoneParts(string Name, int Zone, ZoneExtract Always, IReadOnlyList<RegionPart> Regions, IReadOnlyList<WakeUpPoint> WakeUps)
+public sealed record ZoneParts(string Name, int Zone, ZoneExtract Always, IReadOnlyList<RegionPart> Regions, IReadOnlyList<WakeUpPoint> WakeUps,
+    int PlotSites = 0)
 {
     /// <summary>Everything in one list, as if every cell were loaded.</summary>
     public ZoneExtract Merged() => Always with
@@ -227,7 +229,7 @@ public static class ZoneExtractor
         // Objects tied to the time of day, with their windows, by game object id (only with a running clock).
         var windows = new Dictionary<long, List<TimeWindow>>();
         var timed = new Dictionary<IReadOnlyList<TimeWindow>, TimedGroup>(ReferenceEqualityComparer.Instance);
-        int nodes = 0, inactive = 0, triggers = 0, renderCount = 0, colliderCount = 0;
+        int nodes = 0, inactive = 0, triggers = 0, renderCount = 0, colliderCount = 0, plotSites = 0;
 
         // First pass: renderers that only show at lower levels of detail, and objects hidden at runtime.
         void CollectLods(AssetRef transformRef)
@@ -336,6 +338,9 @@ public static class ZoneExtractor
                         case "WakeUpDestination":
                             wakeUps.Add(new WakeUpPoint(path, world, FirstInt(assets, script)));
                             break;
+                        case "LandPlotLocation":
+                            plotSites++;
+                            break;
                     }
                 }
             }
@@ -423,7 +428,7 @@ public static class ZoneExtractor
         return new ZoneParts(rootName, zoneId, Part(rootName, always, true),
             regions.Select(r => new RegionPart(r.Region.Cell, r.Region.World, r.Region.ProxyMesh, r.Region.ProxyMaterials,
                 Part(r.Region.Cell.Path, r.Content, false))).ToList(),
-            wakeUps);
+            wakeUps, plotSites);
     }
 
     // The first serialized field of a script, an int32 or enum: ZoneDirector's zone, WakeUpDestination's deathRegionSetId.
