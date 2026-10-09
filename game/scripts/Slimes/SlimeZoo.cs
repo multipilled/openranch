@@ -21,7 +21,7 @@ namespace OpenRanch.Game.Slimes;
 /// --zoo-focus ID points the camera at that slime's pen instead of the whole zoo.
 /// Beside the eating pens, bigger pens hold one <see cref="ZooTrial"/> each: every gordo fed until it
 /// bursts, and the abilities and behaviours of docs/behavior/slime-abilities.md. --zoo-part NAMES (a
-/// comma-separated list of "eat", "gordos" and the trial groups) runs only those parts.
+/// comma-separated list of "eat", "gordos" and the trial groups of <see cref="BehaviourTrials"/>) runs only those parts.
 /// The floor, pen size and wall height are openranch's own test set-up, not the original's.
 /// </summary>
 public partial class SlimeZoo : Node3D
@@ -50,6 +50,8 @@ public partial class SlimeZoo : Node3D
     private Pen? _formingPen;
     private string? _largo, _tarr;
     private double _time, _builtAt = -1, _largoAt, _tarrAt;
+    // The trial the player stands in for now (trials that need the player take turns).
+    private ZooTrial? _playerHolder;
 
     public SlimeZoo(M2World m2, PlayerController player, string[] args)
     {
@@ -81,6 +83,8 @@ public partial class SlimeZoo : Node3D
         }
         foreach (var trial in _trials.Where(t => !t.Done))
             trial.Step(delta);
+        if (_playerHolder is { Done: true })
+            _playerHolder = null;
         if (!_check)
             return;
         var eatDone = !Runs("eat") || (_pens.All(p => p.Done) && _largo is not null && _tarr is not null);
@@ -184,6 +188,9 @@ public partial class SlimeZoo : Node3D
         if (Runs("gordos"))
             foreach (var gordo in Catalog.Gordos.Gordos.Where(g => Catalog.Prefabs.Has(g.Id)).OrderBy(g => g.Id, StringComparer.Ordinal))
                 yield return new GordoTrial(gordo.Id);
+        foreach (var trial in BehaviourTrials.All(Catalog))
+            if (Runs(trial.Group))
+                yield return trial;
     }
 
     // Its favourite food when it has one, otherwise the first of its foods by name; never a slime or
@@ -195,6 +202,30 @@ public partial class SlimeZoo : Node3D
             .OrderBy(f => f.Food, StringComparer.Ordinal)
             .ToList();
         return foods.FirstOrDefault(f => f.IsFavorite) ?? foods.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Lends the player to <paramref name="trial"/>, standing at <paramref name="onFloor"/> and held still,
+    /// unless another trial has it; then returns false and the trial asks again later. The player is
+    /// handed back when the trial is done or calls <see cref="ReleasePlayer"/>.
+    /// </summary>
+    public bool HoldPlayer(ZooTrial trial, Vector3 onFloor)
+    {
+        if (_playerHolder is not null && _playerHolder != trial)
+            return false;
+        if (_playerHolder is null)
+        {
+            _player.GlobalPosition = onFloor + Vector3.Up * 0.05f;
+            _player.Velocity = Vector3.Zero;
+        }
+        _playerHolder = trial;
+        return true;
+    }
+
+    public void ReleasePlayer(ZooTrial trial)
+    {
+        if (_playerHolder == trial)
+            _playerHolder = null;
     }
 
     /// <summary>Puts an item on the zoo's floor at <paramref name="onFloor"/>, resting on it.</summary>

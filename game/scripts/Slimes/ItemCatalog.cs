@@ -61,6 +61,11 @@ public sealed class ItemCatalog
     /// zone's cave volumes; without it nothing counts as a cave.
     /// </summary>
     public Func<Vector3, bool>? InCave { get; set; }
+    /// <summary>
+    /// Whether a point (Godot coordinates) is on The Ranch or in the Wilds, where feral slimes don't
+    /// poof. Without it everything counts as The Ranch (openranch only runs slimes there so far).
+    /// </summary>
+    public Func<Vector3, bool>? OnRanchOrWilds { get; set; }
 
     /// <summary>Raised for every explosion (boom slimes, boom gordos, feral stomps).</summary>
     public event Action<Explosions.Result>? Exploded;

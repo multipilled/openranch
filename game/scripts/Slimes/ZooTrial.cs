@@ -15,9 +15,15 @@ namespace OpenRanch.Game.Slimes;
 /// </summary>
 public abstract class ZooTrial
 {
-    protected ZooTrial(string name) => Name = name;
+    protected ZooTrial(string name, string group = "gordos")
+    {
+        Name = name;
+        Group = group;
+    }
 
     public string Name { get; }
+    /// <summary>The --zoo-part name that runs this trial.</summary>
+    public string Group { get; }
     public bool Done { get; protected set; }
     public bool Failed { get; protected set; }
     /// <summary>One line on what happened, for the report.</summary>

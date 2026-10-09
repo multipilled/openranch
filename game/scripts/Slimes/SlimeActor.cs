@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using OpenRanch.Formats.Game;
@@ -15,7 +16,7 @@ namespace OpenRanch.Game.Slimes;
 /// </summary>
 public partial class SlimeActor : Actor
 {
-    private enum Activity { None, Wander, Food, Hover, Roll }
+    private enum Activity { None, Wander, Food, Hover, Roll, Behaviour }
 
     private readonly ItemCatalog _catalog;
     private readonly Random _random = new();
@@ -45,6 +46,10 @@ public partial class SlimeActor : Actor
     private bool _hoverCancelled;
     private Vector3 _hoverDrift, _rollAxis, _rollForward;
 
+    // The prefab's other behaviour pieces (feral, abilities, feeding habits) and the one in charge.
+    private readonly List<SlimeBehaviour> _behaviours = [];
+    private SlimeBehaviour? _behaviour;
+
     public SlimeActor(ItemCatalog catalog, SlimeSpecies species, ItemPrefab prefab)
     {
         _catalog = catalog;
@@ -73,7 +78,34 @@ public partial class SlimeActor : Actor
         // The first hover and roll come after a delay picked the same way as later ones.
         _nextHover = SlimeTraits.Delay(SlimeTraits.HoverMinDelay, SlimeTraits.HoverMaxDelay, Sim.Agitation, _random.NextDouble());
         _nextRoll = SlimeTraits.Delay(SlimeTraits.RollMinDelay, SlimeTraits.RollMaxDelay, Sim.Agitation, _random.NextDouble());
+
+        Prefab = prefab;
+        // SlimeFeral removes itself from normal-sized slimes, so only largos can be feral (static analysis).
+        if (prefab.RootScript("SlimeFeral") is { } feral && prefab.VacuumSize != 0)
+            Feral = new Feral(new FeralSettings(
+                feral["dynamicToFeral"] is true, feral["dynamicFromFeral"] is true,
+                feral["feralLifetimeHours"] is float hours ? hours : 0f), Sim);
+        foreach (var behaviour in SlimeBehaviours.For(catalog, prefab, this))
+        {
+            _behaviours.Add(behaviour);
+            behaviour.Attach(this);
+        }
     }
+
+    public ItemCatalog Catalog => _catalog;
+    public ItemPrefab Prefab { get; }
+    /// <summary>Its feral state, for slimes that can go feral (largos); null otherwise.</summary>
+    public Feral? Feral { get; }
+    /// <summary>The behaviour pieces from its prefab (<see cref="SlimeBehaviours"/>).</summary>
+    public IReadOnlyList<SlimeBehaviour> Behaviours => _behaviours;
+    public T? Behaviour<T>() where T : SlimeBehaviour => _behaviours.OfType<T>().FirstOrDefault();
+    /// <summary>Seconds since it appeared.</summary>
+    public float Age => _age;
+    /// <summary>Standing on something (checked a few times a second).</summary>
+    public bool Grounded => _grounded;
+    /// <summary>The prefab root's scale (2 for largos).</summary>
+    public float PrefabScale => _scale;
+    public Random Random => _random;
 
     /// <summary>The slime's appetite and mood.</summary>
     public Slime Sim { get; }
@@ -89,13 +121,31 @@ public partial class SlimeActor : Actor
     /// <summary>Raised for each item the slime produces after digesting.</summary>
     public event Action<SlimeActor, Actor>? Produced;
 
+    public override void _Ready()
+    {
+        base._Ready();
+        BodyEntered += body =>
+        {
+            foreach (var b in _behaviours)
+                b.Touched(body);
+        };
+    }
+
     public override void _PhysicsProcess(double delta)
     {
         base._PhysicsProcess(delta);
         var dt = (float)delta;
         _age += dt;
         Sim.Advance(_catalog.Clock.HoursFor(dt));
-        if (Consumed || CaughtBy is not null)
+        if (Consumed)
+            return;
+        foreach (var b in _behaviours)
+        {
+            b.Tick(dt);
+            if (Consumed)
+                return;
+        }
+        if (CaughtBy is not null)
             return;
 
         foreach (var body in GetCollidingBodies())
@@ -114,6 +164,7 @@ public partial class SlimeActor : Actor
         {
             Activity.Hover => !_hoverCancelled && _age < _traitEnds,
             Activity.Roll => _age < _traitEnds,
+            Activity.Behaviour => _behaviour is { CanRethink: false },
             _ => false,
         };
         if (_age >= _nextRethink && !holding)
@@ -121,8 +172,10 @@ public partial class SlimeActor : Actor
             _nextRethink = _age + SlimeMotion.RethinkSeconds;
             Rethink();
         }
-        // Traits do their own ground checks; wandering and food only push while standing on something.
-        if (_activity == Activity.Hover)
+        // Traits and behaviour pieces do their own ground checks; wandering and food only push while standing on something.
+        if (_activity == Activity.Behaviour)
+            _behaviour?.Action(dt);
+        else if (_activity == Activity.Hover)
             Hover();
         else if (_activity == Activity.Roll)
             Roll();
@@ -181,6 +234,28 @@ public partial class SlimeActor : Actor
         var hoverDue = _hovers && _age >= _nextHover;
         var rollDue = _rolls && _age >= _nextRoll && _grounded;
         var foodRelevancy = best is null ? 0f : SlimeMotion.FoodRelevancy(bestDrive);
+        // The behaviour pieces compete too; the most relevant one wins over food, traits and wandering.
+        SlimeBehaviour? piece = null;
+        var pieceRelevancy = 0f;
+        foreach (var b in _behaviours)
+            if (b.Relevancy(_grounded) is var r && r > pieceRelevancy)
+                (piece, pieceRelevancy) = (b, r);
+        var otherRelevancy = Math.Max(Math.Max(foodRelevancy, SlimeMotion.WanderRelevancy), hoverDue || rollDue ? SlimeTraits.TraitRelevancy : 0f);
+        var previous = _activity == Activity.Behaviour ? _behaviour : null;
+        if (piece is not null && pieceRelevancy > otherRelevancy)
+        {
+            if (piece != previous)
+            {
+                previous?.Deselected();
+                _behaviour = piece;
+                _activity = Activity.Behaviour;
+                piece.Selected();
+            }
+            _target = null;
+            return;
+        }
+        previous?.Deselected();
+        _behaviour = null;
         if ((hoverDue || rollDue) && SlimeTraits.TraitRelevancy >= foodRelevancy)
         {
             if (hoverDue)
@@ -216,10 +291,20 @@ public partial class SlimeActor : Actor
             _nextRethink = _age;
             return;
         }
-        var toTarget = _target.GlobalPosition - GlobalPosition;
+        Pursue(_target.GlobalPosition, _target, SlimeMotion.FoodJumpStrength(_targetDrive, _maxJump), _pursuitSpeed, _facingSpeed, _facingStability, _foodStarted);
+    }
+
+    /// <summary>
+    /// One physics step of going after something (food, the player): turns toward it, jumps at it when
+    /// something is in the way, otherwise pushes along (docs/behavior/slimes.md, "Going for food").
+    /// <paramref name="startedAt"/> is when the chase began (its pulses keep time from then).
+    /// </summary>
+    public void Pursue(Vector3 targetPosition, GodotObject? target, float jumpStrength, float pursuitSpeed, float facingSpeed, float facingStability, float startedAt)
+    {
+        var toTarget = targetPosition - GlobalPosition;
         var distance = toTarget.Length();
         var dir = distance > 0.001f ? toTarget / distance : Forward;
-        TurnToward(dir, _facingSpeed, _facingStability);
+        TurnToward(dir, facingSpeed, facingStability);
 
         // Something in the way (checked at most once a second): jump toward the target.
         if (_age >= _nextBlockCheck)
@@ -228,26 +313,25 @@ public partial class SlimeActor : Actor
             var flat = toTarget with { Y = 0 };
             var reach = Math.Min(_groundDistance * 5, distance);
             var hit = flat.LengthSquared() > 0 ? Ray(GlobalPosition, GlobalPosition + flat.Normalized() * reach, WorldLayer | ActorLayer) : null;
-            _blocked = hit is { Count: > 0 } && hit["collider"].AsGodotObject() != _target;
+            _blocked = hit is { Count: > 0 } && hit["collider"].AsGodotObject() != target;
         }
         if (_blocked)
         {
             if (_age >= _nextJump)
             {
-                var strength = SlimeMotion.FoodJumpStrength(_targetDrive, _maxJump);
                 var aim = (dir * SlimeMotion.LeanTowardTarget(distance) + Vector3.Up).Normalized();
-                ApplyCentralImpulse(aim * strength * Mass);
+                ApplyCentralImpulse(aim * jumpStrength * Mass);
                 _nextJump = _age + SlimeMotion.SecondsBetweenJumps;
             }
         }
         else if (distance <= SlimeMotion.SteadyPursuitDistance)
         {
-            ApplyCentralForce(dir * (SlimeMotion.SteadyPursuitForce * _pursuitSpeed * Mass * _catalog.FixedTimestep));
+            ApplyCentralForce(dir * (SlimeMotion.SteadyPursuitForce * pursuitSpeed * Mass * _catalog.FixedTimestep));
         }
         else
         {
-            var pulse = SlimeMotion.Pulse(_age - _foodStarted);
-            ApplyCentralForce(dir * (SlimeMotion.PulsePursuitForce * Mass * _pursuitSpeed * _catalog.FixedTimestep * pulse));
+            var pulse = SlimeMotion.Pulse(_age - startedAt);
+            ApplyCentralForce(dir * (SlimeMotion.PulsePursuitForce * Mass * pursuitSpeed * _catalog.FixedTimestep * pulse));
             ApplyForce(dir * (SlimeMotion.PulseRollForce * Mass * _catalog.FixedTimestep * pulse), Vector3.Down * Radius);
         }
     }
@@ -328,10 +412,10 @@ public partial class SlimeActor : Actor
     }
 
     // Slimes face their model's front, Unity's +Z, which is Godot's -Z.
-    private Vector3 Forward => -GlobalBasis.Z.Normalized();
+    public Vector3 Forward => -GlobalBasis.Z.Normalized();
 
     // Twists toward a direction, judging by where it will face a moment from now (docs/behavior/slimes.md).
-    private void TurnToward(Vector3 dir, float speed, float stability)
+    public void TurnToward(Vector3 dir, float speed, float stability)
     {
         var spin = AngularVelocity;
         var ahead = spin.LengthSquared() > 1e-8f
@@ -360,6 +444,7 @@ public partial class SlimeActor : Actor
                 return;
             var meal = Sim.Feed(food.Id, swallowed);
             _busy = false;
+            Feral?.DidEat();
             Ate?.Invoke(this, food.Id);
             if (meal.Becomes is { } becomes)
             {
@@ -404,11 +489,14 @@ public partial class SlimeActor : Actor
         next.Visual.Scale = Vector3.One * (Radius / Math.Max(next.Radius, 0.001f));
         next.CreateTween().TweenProperty(next.Visual, "scale", Vector3.One, Largos.TransformScaleSeconds)
             .SetTrans(Tween.TransitionType.Elastic).SetEase(Tween.EaseType.Out);
+        // FeralizeOnLargoTransformed: a slime with it turns feral as it forms (hunter largos).
+        if (next.Prefab.RootScript("FeralizeOnLargoTransformed") is not null)
+            next.Feral?.SetFeral(_catalog.Clock.TotalHours);
         Consume();
         Transformed?.Invoke(this, next);
     }
 
-    private Godot.Collections.Dictionary Ray(Vector3 from, Vector3 to, uint mask)
+    public Godot.Collections.Dictionary Ray(Vector3 from, Vector3 to, uint mask)
     {
         var query = PhysicsRayQueryParameters3D.Create(from, to, mask, new Godot.Collections.Array<Rid> { GetRid() });
         return GetWorld3D().DirectSpaceState.IntersectRay(query);

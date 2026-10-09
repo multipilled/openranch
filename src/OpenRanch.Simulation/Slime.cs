@@ -42,12 +42,18 @@ public sealed class Slime
     public bool IsStarving => Hunger >= StarvingCutoff;
     public bool IsAngry => Agitation >= AngryCutoff;
 
-    /// <summary>Hungry enough to go looking for food.</summary>
-    public bool WantsToEat => Species.Foods.Count > 0 && Hunger > Species.Eating.MinDriveToEat;
+    /// <summary>
+    /// Feral (docs/behavior/feral-slimes.md): it eats anything in its diet that touches it, however
+    /// full or calm it is (static analysis of SlimeEat).
+    /// </summary>
+    public bool IsFeral { get; set; }
+
+    /// <summary>Hungry enough to go looking for food (always, when feral).</summary>
+    public bool WantsToEat => IsFeral || (Species.Foods.Count > 0 && Hunger > Species.Eating.MinDriveToEat);
 
     /// <summary>Whether the slime would eat <paramref name="food"/> right now.</summary>
     public bool WillEat(string food) =>
-        Species.FoodEffect(food) is { } effect && Drive(effect) >= Species.Eating.MinDriveToEat;
+        Species.FoodEffect(food) is { } effect && (IsFeral || Drive(effect) >= Species.Eating.MinDriveToEat);
 
     /// <summary>
     /// How much the slime wants a food right now: the food's feeling (hunger, agitation, or 1 for
