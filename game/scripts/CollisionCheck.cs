@@ -12,34 +12,48 @@ namespace OpenRanch.Game;
 /// Checks that an area can be walked on: casts rays straight down on a grid over the area to find
 /// ground, then drops the player onto a spread of ground points and checks that it comes to rest
 /// standing there instead of falling through. Runs without a window (--headless).
+/// The area is the zone's world cells (their region boxes) where it has any, otherwise the spread of its
+/// colliders; ground inside a kill volume (under a sea) is left out. See docs/behavior/zones.md.
 /// </summary>
 public sealed class CollisionCheck
 {
     private const float GridStep = 4f;
+    // Large zones get a coarser grid so that a check stays within about this many rays.
+    private const int MaxRays = 60000;
     private const int Drops = 40;
     private const int SettleFrames = 90;
 
     private readonly Node3D _scene;
     private readonly PlayerController _player;
     private readonly Aabb _bounds;
+    private readonly float _step;
+    private readonly ZoneExtract _zone;
+    private readonly List<TriggerVolume> _kills;
     private readonly float _minWalkableNormalY;
     private int _warmup = 3;
     private List<Vector3>? _targets;
     private int _current = -1;
     private int _frame;
-    private int _rays, _hits, _walkable, _landed;
+    private int _rays, _hits, _walkable, _landed, _inKillVolumes;
     private readonly List<string> _failures = new();
 
-    public CollisionCheck(Node3D scene, PlayerController player, ZoneExtract zone, PlayerRig rig)
+    public CollisionCheck(Node3D scene, PlayerController player, ZoneExtract zone, PlayerRig rig, PhysicsLayers? layers = null)
     {
+        // Only kill volumes the player's layer meets (the Ranch's "NonPlayerKillVolume"s are on one it doesn't).
+        _kills = zone.KillVolumes.Where(k => layers?.Collide(PhysicsLayers.PlayerLayer, (int)k.Layer) ?? true).ToList();
         _scene = scene;
         _player = player;
         _minWalkableNormalY = Mathf.Cos(Mathf.DegToRad(rig.SlopeLimitDegrees));
-        var points = zone.Colliders.Select(c => UnityConvert.Transform(c.World).Origin).ToList();
+        _zone = zone;
+        // Cell boxes are in Unity space; mirroring z turns a box's corners into the Godot box's.
+        var points = zone.Cells.Count > 0
+            ? zone.Cells.SelectMany(c => new[] { c.Center - c.Extent, c.Center + c.Extent }).Select(UnityConvert.Position).ToList()
+            : zone.Colliders.Select(c => UnityConvert.Transform(c.World).Origin).ToList();
         var bounds = new Aabb(points[0], Vector3.Zero);
         foreach (var p in points)
             bounds = bounds.Expand(p);
         _bounds = bounds;
+        _step = Math.Max(GridStep, Mathf.Sqrt(bounds.Size.X * bounds.Size.Z / MaxRays));
         _player.SetPhysicsProcess(false);
     }
 
@@ -67,7 +81,8 @@ public sealed class CollisionCheck
             if (_player.IsOnFloor() && Math.Abs(rest.Y - target.Y) < 1.5f)
                 _landed++;
             else
-                _failures.Add($"({target.X:F0}, {target.Y:F0}, {target.Z:F0}) ended at y={rest.Y:F1}");
+                _failures.Add($"({target.X:F0}, {target.Y:F0}, {target.Z:F0} Unity z {-target.Z:F0}) ended at " +
+                              $"({rest.X:F0}, {rest.Y:F1}, {rest.Z:F0}): {MissReason(target, rest)}");
             NextDrop();
         }
 
@@ -76,9 +91,10 @@ public sealed class CollisionCheck
 
         var groundShare = _rays == 0 ? 0 : 100.0 * _hits / _rays;
         Passed = _targets.Count > 0 && _landed >= _targets.Count * 0.95;
-        Report = $"collision-check: {_rays} rays over {_bounds.Size.X:F0} x {_bounds.Size.Z:F0} m, {_hits} hit ground " +
-                 $"({groundShare:F0}%), {_walkable} walkable; player landed on {_landed} of {_targets.Count} drops" +
-                 (_failures.Count > 0 ? "; misses: " + string.Join("; ", _failures.Take(5)) : "") +
+        Report = $"collision-check: {_rays} rays every {_step:F0} m over {_bounds.Size.X:F0} x {_bounds.Size.Z:F0} m, {_hits} hit ground " +
+                 $"({groundShare:F0}%), {_walkable} walkable ({_inKillVolumes} more inside kill volumes left out); " +
+                 $"player landed on {_landed} of {_targets.Count} drops" +
+                 (_failures.Count > 0 ? "; misses: " + string.Join("; ", _failures) : "") +
                  (Passed ? " -> PASS" : " -> FAIL");
         return true;
     }
@@ -93,15 +109,26 @@ public sealed class CollisionCheck
         _player.Velocity = Vector3.Zero;
     }
 
+    // Why a drop didn't end standing where it was aimed.
+    private string MissReason(Vector3 target, Vector3 rest)
+    {
+        if (rest.Y < target.Y - 20)
+            return "fell through the ground";
+        if (!_player.IsOnFloor())
+            return "not on the floor (still falling or sliding)";
+        return rest.Y > target.Y ? "came to rest on something higher (a ledge or overhang it was dropped onto)"
+            : "slid off to lower ground (steep or narrow spot)";
+    }
+
     private List<Vector3> CastGrid()
     {
         var space = _scene.GetWorld3D().DirectSpaceState;
         var walkable = new List<Vector3>();
         var top = _bounds.End.Y + 60;
         var bottom = _bounds.Position.Y - 60;
-        for (var x = _bounds.Position.X; x <= _bounds.End.X; x += GridStep)
+        for (var x = _bounds.Position.X; x <= _bounds.End.X; x += _step)
         {
-            for (var z = _bounds.Position.Z; z <= _bounds.End.Z; z += GridStep)
+            for (var z = _bounds.Position.Z; z <= _bounds.End.Z; z += _step)
             {
                 _rays++;
                 var query = PhysicsRayQueryParameters3D.Create(new Vector3(x, top, z), new Vector3(x, bottom, z));
@@ -109,13 +136,21 @@ public sealed class CollisionCheck
                 var hit = space.IntersectRay(query);
                 if (hit.Count == 0)
                     continue;
+                var position = (Vector3)hit["position"];
+                var unity = new System.Numerics.Vector3(position.X, position.Y, -position.Z);
+                if (_zone.Cells.Count > 0 && !_zone.Cells.Any(c => c.Contains(unity)))
+                    continue; // ground of a neighbouring area
                 _hits++;
                 var normal = (Vector3)hit["normal"];
-                if (normal.Y >= _minWalkableNormalY)
+                if (normal.Y < _minWalkableNormalY)
+                    continue;
+                if (_kills.Any(k => k.Contains(unity)))
                 {
-                    _walkable++;
-                    walkable.Add((Vector3)hit["position"]);
+                    _inKillVolumes++;
+                    continue;
                 }
+                _walkable++;
+                walkable.Add(position);
             }
         }
         // An even spread of drop points across the walkable ground.

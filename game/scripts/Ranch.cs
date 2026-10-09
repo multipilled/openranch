@@ -73,7 +73,7 @@ public partial class Ranch : Node3D
                  $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
                  $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
 
-        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour, TimeOfDayLight.Read(assets, scene));
+        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour, TimeOfDayLight.Read(assets, scene), zone.Cells);
         AddChild(worldLighting);
         var timed = TimedObjects.Build(zone, world, layers, worldLighting, state.Hour);
         AddChild(timed);
@@ -82,10 +82,18 @@ public partial class Ranch : Node3D
         AddChild(player);
         player.Configure(rig.Height, rig.Radius, rig.SlopeLimitDegrees, rig.EyeHeight);
         player.Position = UnityConvert.Position(rig.Spawn);
+        // Milestone 4: other areas start where a teleporter puts the player (World/ZoneSpawn.cs).
+        var otherZone = zoneName != "zoneRANCH";
+        if (otherZone && ZoneSpawn.Pick(zone) is { } spawn)
+        {
+            player.Position = UnityConvert.Position(spawn.Position);
+            player.Look(-spawn.YawDegrees, 0);
+            GD.Print($"{zoneName}: player starts at {spawn.Point.Name} ({spawn.Position.X:F1}, {spawn.Position.Y:F1}, {spawn.Position.Z:F1})");
+        }
 
         if (Array.IndexOf(args, "--collision-check") >= 0)
         {
-            _collisionCheck = new CollisionCheck(this, player, zone, rig);
+            _collisionCheck = new CollisionCheck(this, player, zone, rig, layers);
             return;
         }
 
@@ -102,7 +110,7 @@ public partial class Ranch : Node3D
 
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
         // With a save, its money and corral slimes take the place of the demo slimes.
-        var m2Args = saved is null ? args : args.Append("--no-slimes").ToArray();
+        var m2Args = saved is null && !otherZone ? args : args.Append("--no-slimes").ToArray();
         var m2 = Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args);
         if (m2 is not null)
         {

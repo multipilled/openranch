@@ -76,8 +76,11 @@ public sealed record CellArea(string Path, int AmbianceZone, Vector3 Center, Vec
 /// </summary>
 public sealed record TeleportPoint(string Name, string Path, Matrix4x4 World, bool Reorient, bool IsDebugStart);
 
-/// <summary>A trigger volume, such as a <c>KillOnTrigger</c> under a sea, in the same terms as <see cref="CaveVolume"/>.</summary>
-public sealed record TriggerVolume(string Path, Matrix4x4 World, ColliderShape Shape, Vector3 LocalMin, Vector3 LocalMax, float Radius)
+/// <summary>
+/// A trigger volume, such as a <c>KillOnTrigger</c> under a sea, in the same terms as <see cref="CaveVolume"/>.
+/// Triggers only meet bodies on layers that collide with theirs (<see cref="Layer"/>).
+/// </summary>
+public sealed record TriggerVolume(string Path, Matrix4x4 World, ColliderShape Shape, Vector3 LocalMin, Vector3 LocalMax, float Radius, uint Layer)
 {
     public bool Contains(Vector3 point) =>
         new CaveVolume(Path, World, Shape, LocalMin, LocalMax, Radius, 0, false, []).Contains(point);
@@ -287,7 +290,7 @@ public static class ZoneExtractor
                                 caves.Add(new CaveVolume(path, world, col.Shape, bounds.Min, bounds.Max, col.Radius, cs.Zone, cs.AffectsLighting,
                                     cs.Lights));
                             if (kills && CaveBounds(assets, scene, col) is { } killBounds)
-                                killVolumes.Add(new TriggerVolume(path, world, col.Shape, killBounds.Min, killBounds.Max, col.Radius));
+                                killVolumes.Add(new TriggerVolume(path, world, col.Shape, killBounds.Min, killBounds.Max, col.Radius, go.Layer));
                             continue;
                         }
                         var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
