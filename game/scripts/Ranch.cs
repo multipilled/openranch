@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using Godot;
 using OpenRanch.Formats.Game;
-using OpenRanch.Formats.Saves;
 using OpenRanch.Formats.Scene;
 using OpenRanch.Formats.Unity;
 using OpenRanch.Game.Player;
@@ -18,7 +17,9 @@ namespace OpenRanch.Game;
 ///   --game DIR                      the Slime Rancher folder, if it isn't found automatically
 ///   --zone NAME                     which area to build (default zoneRANCH)
 ///   --camera x,y,z,yaw,pitch        start position and view in the original game's coordinates
-///   --save FILE                     show the world as in this save (ranch upgrades, time of day); read only
+///   --save FILE                     open this save: an original v12 save or an openranch .ranch.json (plots,
+///                                   corral slimes, money, ranch upgrades, time of day); read only
+///   --m3-check                      with --save: check the ranch against the save reader, print a report, quit
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
@@ -47,8 +48,12 @@ public partial class Ranch : Node3D
         var assets = new AssetSet(install);
         var scene = assets.File("level3")!;
         var zoneName = Arg("--zone") ?? "zoneRANCH";
-        var state = Arg("--save") is { } savePath ? WorldStateFromSave(savePath) : WorldState.NewGame;
+        // Milestone 3: a save's plots stand on their sites (game/scripts/SaveLoad).
+        var saved = Arg("--save") is { } savePath ? SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName) : null;
+        var state = saved?.State ?? WorldState.NewGame;
         var zone = ZoneExtractor.Extract(assets, scene, zoneName, state);
+        if (saved is not null)
+            zone = saved.Apply(zone);
         var layers = PhysicsLayers.Read(assets);
         var rig = PlayerRig.Read(assets, scene);
         var lighting = SceneLighting.Read(assets, scene);
@@ -88,18 +93,15 @@ public partial class Ranch : Node3D
         worldLighting.Attach(player.Camera);
 
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
-        if (Slimes.M2World.Create(install, zone, layers, player, state.Hour, args) is { } m2)
+        // With a save, its money and corral slimes take the place of the demo slimes.
+        var m2Args = saved is null ? args : args.Append("--no-slimes").ToArray();
+        if (Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args) is { } m2)
+        {
             AddChild(m2);
-    }
-
-    // Reads the progress counters and the hour from a save. The file is only read.
-    private static WorldState WorldStateFromSave(string path)
-    {
-        var game = SaveFile.Read(new System.IO.MemoryStream(System.IO.File.ReadAllBytes(path)));
-        var progress = game.Block("player").Map("progress")
-            .ToDictionary(kv => System.Convert.ToInt32(kv.Key), kv => System.Convert.ToInt32(kv.Value));
-        var hour = (float)(game.Block("world").Get<double>("worldTime") % 86400.0 / 3600.0);
-        return new WorldState(progress, hour);
+            saved?.Populate(m2);
+            if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
+                AddChild(new SaveLoad.M3Check(saved, zone, m2, install));
+        }
     }
 
     private void ShowMessage(string text)

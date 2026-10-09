@@ -26,8 +26,11 @@ public sealed record ZoneStats(int Nodes, int SkippedInactive, int Renderers, in
 /// <summary>
 /// The game state that decides which optional objects show: per-type progress counters (ranch
 /// upgrades and so on, as stored in a save's player progress), the hour of the day, and gadget mode.
+/// <see cref="Hidden"/> lists scene game objects (path ids in the scene file) that the game has
+/// replaced or removed, such as the plot standing on a land plot site when a save built another.
 /// </summary>
-public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Hour, bool GadgetMode = false)
+public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Hour, bool GadgetMode = false,
+    IReadOnlySet<long>? Hidden = null)
 {
     /// <summary>A new game at midday: no progress yet.</summary>
     public static WorldState NewGame { get; } = new(new Dictionary<int, int>(), 12f);
@@ -102,7 +105,7 @@ public static class ZoneExtractor
         var caves = new List<CaveVolume>();
         var lights = new List<LightItem>();
         var lowerLods = new HashSet<long>();
-        var hiddenObjects = new HashSet<long>();
+        var hiddenObjects = new HashSet<long>(state.Hidden ?? new HashSet<long>());
         int nodes = 0, inactive = 0, triggers = 0;
 
         // First pass: renderers that only show at lower levels of detail, and objects hidden at runtime.
