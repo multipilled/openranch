@@ -236,11 +236,17 @@ public static class AbilityTrials
             },
         };
 
-        // Tangle pollen: fully agitated, a pollen cloud grows on it and is let go.
+        // Tangle pollen: fully agitated, a pollen cloud grows on it and is let go. A fully agitated slime
+        // wants any plort, and its vine reaches 10 m (through walls), so plorts are kept out of its reach.
         yield return new AbilityTrial<PollenCloud>("TANGLE_POLLEN", "TANGLE_SLIME")
         {
             Setup = t => t.Slime.Sim.Agitation = 1,
-            Before = t => t.Slime.Sim.Agitation = 1,
+            Before = t =>
+            {
+                t.Slime.Sim.Agitation = 1;
+                foreach (var plort in t.Catalog.Live.Where(a => a.Kind == ItemKind.Plort && a.GlobalPosition.DistanceTo(t.Slime.GlobalPosition) < 14).ToList())
+                    plort.Consume();
+            },
             Verdict = t =>
             {
                 var ok = t.Piece.StartAgitation == F(t.Catalog, "TANGLE_SLIME", "PollenCloudController", "startGrowthAgitation");
