@@ -203,7 +203,8 @@ public partial class M3Check : Node
 
         // Nothing loose fell through the ground; what slimes ate is reported.
         var looseLive = _saved.SpawnedLoose.Where(s => s.Saved.Joint is null && GodotObject.IsInstanceValid(s.Actor) && !s.Actor.Consumed).ToList();
-        var fell = looseLive.Where(s => s.Actor.GlobalPosition.Y < s.Saved.Position.Y - 5).ToList();
+        // Produce the save left on a crop's joint but no longer growing there (its time to fall had come) drops from the crop.
+        var fell = looseLive.Where(s => s.Actor.GlobalPosition.Y < s.Saved.Position.Y - 5 && ZoneActors.NearestJoint(_saved.Crops, s.Saved.Position) is null).ToList();
         var eaten = _saved.SpawnedLoose.Count(s => s.Saved.Joint is null) - looseLive.Count;
         Check(fell.Count == 0, $"loose actors fallen more than 5 m after {SettleSeconds} s: {fell.Count} ({looseLive.Count} still there, {eaten} eaten or sold)" +
                                string.Concat(fell.Take(5).Select(s => $"\n         {s.Saved.Id} saved at {s.Saved.Position}, now {Unity(s.Actor.GlobalPosition)}")));
