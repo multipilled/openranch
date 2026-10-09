@@ -1,8 +1,10 @@
 # Slimes: hunger, eating and plorts
 
 How an ordinary slime (Pink, Tabby, Rock and the like) decides to eat and what it makes. Largos and
-tarrs are in `largos.md`, species traits in `slime-traits.md`; gordos and feral slimes are only
-touched on at the end.
+tarrs are in `largos.md`, species traits in `slime-traits.md`, gordos in `gordos.md`, feral slimes in
+`feral-slimes.md`, abilities in `slime-abilities.md` and stalking, carrying, gold, lucky, fire and puddle
+habits in `feeding-habits.md`. Which of a slime's behaviours runs is a contest (`slime-abilities.md`,
+"How abilities fit in").
 
 Code: `src/OpenRanch.Simulation/Slime.cs`, `SlimeSpecies.cs`, `Items.cs`. Data readers:
 `src/OpenRanch.Formats/Game/SlimeData.cs`.
@@ -198,7 +200,7 @@ openranch reads it but doesn't remove old plorts yet.
 
 ## Not modelled yet
 
-- Feral slimes eat whatever touches them regardless of hunger.
+- (Done: feral slimes eat whatever in their diet touches them regardless of hunger, see feral-slimes.md.)
 - Toys, music boxes and nearby pollen change how fast agitation settles; mods (game-mode cheats)
   scale hunger speed.
 - Slimes in the Slimulations area have hunger switched off.

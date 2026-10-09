@@ -371,7 +371,7 @@ public sealed class GoldRunner : SlimeBehaviour
 }
 
 /// <summary>
-/// Lucky slimes (<c>LuckySlimeProduceCoins</c>, <c>LuckySlimeFlee</c>): hit by a chicken, it gobbles it,
+/// Lucky slimes (<c>LuckySlimeProduceCoins</c>, <c>LuckySlimeFlee</c>): hit by a chicken or chick, it gobbles it,
 /// hops after 0.35 s and drops coin bundles 0.1 s apart (2 the first time, then double, up to 6), each
 /// worth its prefab's <c>ConvertToCurrency.amount</c>; once hit or seen by the player it vanishes 10 game
 /// minutes later.
@@ -400,7 +400,7 @@ public sealed class LuckyCoins : SlimeBehaviour
 
     public override void Touched(Node body)
     {
-        if (body is not Actor a || Items.KindOf(a.Id) != ItemKind.Meat || a.Consumed || !_hitBy.Add(a.GetInstanceId()))
+        if (body is not Actor a || Items.KindOf(a.Id) is not (ItemKind.Meat or ItemKind.Chick) || a.Consumed || !_hitBy.Add(a.GetInstanceId()))
             return;
         if ((a.LinearVelocity - Slime.LinearVelocity).Length() <= LuckySlime.HitThreshold)
             return;
