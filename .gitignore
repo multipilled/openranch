@@ -40,3 +40,8 @@ game/override.cfg
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Game data, outputs, extracted assets and agent worktrees: never committed
+out/
+extracted/
+.claude/worktrees/
