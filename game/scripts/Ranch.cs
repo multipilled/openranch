@@ -70,9 +70,10 @@ public partial class Ranch : Node3D
         WorldLighting worldLighting;
         TimedObjects timed;
         // Milestone 4: without --zone, every zone of the world scene, its cells loaded around the player (World/WorldMap.cs).
+        // --m3-check checks The Ranch alone against the save (every plot on built ground), so it keeps the single zone.
         WorldMap? map = null;
         var savedPlots = new Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>>();
-        if (Arg("--zone") is null)
+        if (Arg("--zone") is null && Array.IndexOf(args, "--m3-check") < 0)
         {
             worldLighting = new WorldLighting(lighting, ambience, [], [], state.Hour, TimeOfDayLight.Read(assets, scene));
             timed = TimedObjects.Empty(state.Hour);

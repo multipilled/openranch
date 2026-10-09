@@ -186,6 +186,9 @@ Checks (Godot 4.7.2 headless, this PC, other projects' jobs running at the same 
   destination, staying there 2 s. PASS.
 - `--save-check` with Game2_4: starts in DESERT 0.08 m from the saved place, ambience 3; every plot of the save on
   its site with its type. PASS; Logansfarm_5 (saved on The Ranch) likewise.
+- `--m3-check` still builds The Ranch alone (it checks every plot of the ranch on built ground); `--m2-check`,
+  `--day-check`, `--slime-zoo` and `--collision-check` (40/40 drops over the HOME set's 2,184 x 1,550 m) run in the
+  joined world and pass.
 - `--list-cells` prints every cell box, destination and source; `--ground-map` the ground heights over a rectangle.
 
 Time and memory (one run each):
