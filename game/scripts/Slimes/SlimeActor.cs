@@ -8,12 +8,14 @@ namespace OpenRanch.Game.Slimes;
 
 /// <summary>
 /// A slime in the world: a ball that stays upright, gets hungry over game time, goes for food it
-/// wants, eats what it touches and pops out plorts. The rules are in docs/behavior/slimes.md ("In the
-/// world"); tuning comes from the prefab's components, code-only numbers from <see cref="SlimeMotion"/>.
+/// wants, eats what it touches and pops out plorts, or turns into a largo or tarr when it eats another
+/// kind of plort. The rules are in docs/behavior/slimes.md ("In the world") and largos.md; tuning comes
+/// from the prefab's components, code-only numbers from <see cref="SlimeMotion"/>. Species traits
+/// (hovering, rolling) come from the prefab's trait components (docs/behavior/slime-traits.md).
 /// </summary>
 public partial class SlimeActor : Actor
 {
-    private enum Activity { None, Wander, Food }
+    private enum Activity { None, Wander, Food, Hover, Roll }
 
     private readonly ItemCatalog _catalog;
     private readonly Random _random = new();
@@ -33,6 +35,16 @@ public partial class SlimeActor : Actor
     private WanderMood _mood = WanderMood.Rest;
     private Vector3 _heading = Vector3.Forward;
 
+    // Traits: whether the prefab carries SlimeHover / RockSlimeRoll, and their timers.
+    private readonly bool _hovers, _rolls;
+    // The prefab root's scale (2 for largos and tarrs); a hover ends on a touch this high up.
+    private readonly float _scale;
+    // How much a bite hurts a slime it eats (SlimeEat.damagePerAttack).
+    private readonly int _damagePerBite;
+    private float _nextHover, _nextRoll, _traitEnds, _rollStarts;
+    private bool _hoverCancelled;
+    private Vector3 _hoverDrift, _rollAxis, _rollForward;
+
     public SlimeActor(ItemCatalog catalog, SlimeSpecies species, ItemPrefab prefab)
     {
         _catalog = catalog;
@@ -50,10 +62,27 @@ public partial class SlimeActor : Actor
         _scootSpeed = prefab.RootFloat("SlimeRandomMove", "scootSpeedFactor", 1);
         var halfHeight = ItemCatalog.Radius(prefab);
         _groundDistance = halfHeight * 1.3f;
+
+        _hovers = prefab.RootScript("SlimeHover") is not null;
+        _rolls = prefab.RootScript("RockSlimeRoll") is not null;
+        _scale = prefab.Colliders.FirstOrDefault(c => c.Path == prefab.Name) is { } root
+            ? new System.Numerics.Vector3(root.ToRoot.M21, root.ToRoot.M22, root.ToRoot.M23).Length()
+            : 1f;
+        Health = prefab.RootScript("SlimeHealth")?["maxHealth"] is int health ? health : 0;
+        _damagePerBite = prefab.RootScript("SlimeEat")?["damagePerAttack"] is int damage ? damage : 0;
+        // The first hover and roll come after a delay picked the same way as later ones.
+        _nextHover = SlimeTraits.Delay(SlimeTraits.HoverMinDelay, SlimeTraits.HoverMaxDelay, Sim.Agitation, _random.NextDouble());
+        _nextRoll = SlimeTraits.Delay(SlimeTraits.RollMinDelay, SlimeTraits.RollMaxDelay, Sim.Agitation, _random.NextDouble());
     }
 
     /// <summary>The slime's appetite and mood.</summary>
     public Slime Sim { get; }
+
+    /// <summary>Health left (the prefab's SlimeHealth.maxHealth to start); a tarr's bites take it away.</summary>
+    public int Health { get; set; }
+
+    /// <summary>Raised when the slime has turned into another (a largo or a tarr): the old slime, then the new one.</summary>
+    public event Action<SlimeActor, SlimeActor>? Transformed;
 
     /// <summary>Raised when the slime has eaten something (the food's id).</summary>
     public event Action<SlimeActor, string>? Ate;
@@ -80,17 +109,40 @@ public partial class SlimeActor : Actor
             _nextGroundCheck = _age + SlimeMotion.GroundCheckSeconds;
             _grounded = Ray(GlobalPosition, GlobalPosition + Vector3.Down * _groundDistance, WorldLayer | ActorLayer).Count > 0;
         }
-        if (_age >= _nextRethink)
+        // A hover or roll holds the slime until it is over (or a hover is cut short).
+        var holding = _activity switch
+        {
+            Activity.Hover => !_hoverCancelled && _age < _traitEnds,
+            Activity.Roll => _age < _traitEnds,
+            _ => false,
+        };
+        if (_age >= _nextRethink && !holding)
         {
             _nextRethink = _age + SlimeMotion.RethinkSeconds;
             Rethink();
         }
-        if (!_grounded)
+        // Traits do their own ground checks; wandering and food only push while standing on something.
+        if (_activity == Activity.Hover)
+            Hover();
+        else if (_activity == Activity.Roll)
+            Roll();
+        else if (!_grounded)
             return;
-        if (_activity == Activity.Food)
+        else if (_activity == Activity.Food)
             GoForFood();
         else if (_activity == Activity.Wander)
             Wander();
+    }
+
+    public override void _IntegrateForces(PhysicsDirectBodyState3D state)
+    {
+        // A hover ends when the slime's top touches something solid that isn't an item.
+        if (_activity != Activity.Hover)
+            return;
+        for (var i = 0; i < state.GetContactCount(); i++)
+            if (state.GetContactColliderObject(i) is not RigidBody3D
+                && state.GetContactColliderPosition(i).Y > GlobalPosition.Y + SlimeTraits.HoverCeilingHeight * _scale)
+                _hoverCancelled = true;
     }
 
     // Picks whichever activity matters most: going for the best food in reach, or wandering.
@@ -112,7 +164,7 @@ public partial class SlimeActor : Actor
             {
                 if (item == this || item.CaughtBy is not null || !item.Edible || Sim.Species.FoodEffect(item.Id) is not { } effect)
                     continue;
-                var drive = effect.IgnoresHunger ? 1f : Sim.Hunger;
+                var drive = Sim.Drive(effect);
                 if (drive < Sim.Species.Eating.MinDriveToEat)
                     continue;
                 var d2 = GlobalPosition.DistanceSquaredTo(item.GlobalPosition);
@@ -124,7 +176,20 @@ public partial class SlimeActor : Actor
             }
         }
 
-        if (best is not null && SlimeMotion.PrefersFood(bestDrive))
+        // Hovering and rolling matter a fixed amount when due. A tie goes to the trait (openranch's
+        // choice: the original takes whichever behaviour comes first on the prefab).
+        var hoverDue = _hovers && _age >= _nextHover;
+        var rollDue = _rolls && _age >= _nextRoll && _grounded;
+        var foodRelevancy = best is null ? 0f : SlimeMotion.FoodRelevancy(bestDrive);
+        if ((hoverDue || rollDue) && SlimeTraits.TraitRelevancy >= foodRelevancy)
+        {
+            if (hoverDue)
+                StartHover();
+            else
+                StartRoll();
+            _target = null;
+        }
+        else if (best is not null && SlimeMotion.PrefersFood(bestDrive))
         {
             if (_activity != Activity.Food)
             {
@@ -187,6 +252,51 @@ public partial class SlimeActor : Actor
         }
     }
 
+    private void StartHover()
+    {
+        _activity = Activity.Hover;
+        _hoverCancelled = false;
+        _traitEnds = _age + SlimeTraits.HoverSeconds;
+        _nextHover = _traitEnds + SlimeTraits.Delay(SlimeTraits.HoverMinDelay, SlimeTraits.HoverMaxDelay, Sim.Agitation, _random.NextDouble());
+        _hoverDrift = new Vector3((float)_random.NextDouble() * 2 - 1, 0, (float)_random.NextDouble() * 2 - 1);
+    }
+
+    // Lifts toward hover height above whatever is below, and drifts (docs/behavior/slime-traits.md).
+    private void Hover()
+    {
+        if (_hoverCancelled)
+            return;
+        var below = Ray(GlobalPosition, GlobalPosition + Vector3.Down * SlimeTraits.HoverHeight, WorldLayer | ActorLayer);
+        if (below.Count > 0)
+        {
+            var height = GlobalPosition.DistanceTo((Vector3)below["position"]);
+            ApplyCentralForce(Vector3.Up * (SlimeTraits.HoverLiftAt(height) * Mass * _catalog.FixedTimestep));
+        }
+        ApplyCentralForce(_hoverDrift * (SlimeTraits.HoverDrift * Mass * _catalog.FixedTimestep));
+    }
+
+    private void StartRoll()
+    {
+        _activity = Activity.Roll;
+        // It rolls about its own flat right-hand axis; forward is that axis turned a quarter left
+        // (Unity's right is Godot's +X).
+        _rollAxis = GlobalBasis.X with { Y = 0 };
+        _rollAxis = _rollAxis.LengthSquared() > 1e-6f ? _rollAxis.Normalized() : Vector3.Right;
+        _rollForward = Vector3.Up.Cross(_rollAxis);
+        _rollStarts = _age + SlimeTraits.RollSpinSeconds;
+        _traitEnds = _rollStarts + SlimeTraits.RollSeconds;
+        _nextRoll = _traitEnds + SlimeTraits.Delay(SlimeTraits.RollMinDelay, SlimeTraits.RollMaxDelay, Sim.Agitation, _random.NextDouble());
+    }
+
+    private void Roll()
+    {
+        if (!_grounded || _age <= _rollStarts)
+            return;
+        // Spin about the axis so the ball rolls the way it is pushed.
+        ApplyTorque(_rollForward.Cross(Vector3.Down) * (SlimeTraits.RollTorque * Mass * _catalog.FixedTimestep));
+        ApplyCentralForce(_rollForward * (SlimeTraits.RollForce * Mass * _catalog.FixedTimestep));
+    }
+
     private void Wander()
     {
         if (_age >= _nextMood)
@@ -237,15 +347,25 @@ public partial class SlimeActor : Actor
         if (_busy || food.Consumed || food.CaughtBy is not null || !food.Edible || !Sim.WillEat(food.Id))
             return false;
         _busy = true;
-        food.Reserve();
+        // A slime with health (bitten by a tarr) is only swallowed once a bite takes the last of it.
+        var victim = food as SlimeActor;
+        var swallowed = victim is null || victim.Health <= 0 || (victim.Health -= _damagePerBite) <= 0;
+        if (swallowed)
+            food.Reserve();
         GetTree().CreateTimer(SlimeMotion.BiteSeconds, processAlways: false, processInPhysics: true).Timeout += () =>
         {
-            food.Finish();
+            if (swallowed)
+                food.Finish();
             if (!IsInstanceValid(this) || Consumed)
                 return;
-            var meal = Sim.Feed(food.Id);
+            var meal = Sim.Feed(food.Id, swallowed);
             _busy = false;
             Ate?.Invoke(this, food.Id);
+            if (meal.Becomes is { } becomes)
+            {
+                TransformInto(becomes);
+                return;
+            }
             if (meal.Produced.Count == 0)
                 return;
             GetTree().CreateTimer(Slime.DigestSeconds, processAlways: false, processInPhysics: true).Timeout += () =>
@@ -263,6 +383,29 @@ public partial class SlimeActor : Actor
             };
         };
         return true;
+    }
+
+    // Becomes another slime on the spot (docs/behavior/largos.md): the new one keeps this one's
+    // feelings and springs from this one's size to its own.
+    private void TransformInto(string id)
+    {
+        if (_catalog.Species(id) is null)
+        {
+            GD.PushWarning($"{Id} would become {id}, which has no slime settings.");
+            return;
+        }
+        var heading = GlobalBasis.Z with { Y = 0 };
+        var yaw = heading.LengthSquared() > 1e-6f ? Mathf.Atan2(heading.X, heading.Z) : 0f;
+        var next = (SlimeActor)_catalog.Spawn(id, GlobalPosition, yaw);
+        // openranch's colliders don't grow with the model, so a bigger slime starts lifted clear of the ground.
+        next.GlobalPosition += Vector3.Up * Math.Max(0, next.Radius - Radius);
+        next.Sim.Hunger = Sim.Hunger;
+        next.Sim.Agitation = Sim.Agitation;
+        next.Visual.Scale = Vector3.One * (Radius / Math.Max(next.Radius, 0.001f));
+        next.CreateTween().TweenProperty(next.Visual, "scale", Vector3.One, Largos.TransformScaleSeconds)
+            .SetTrans(Tween.TransitionType.Elastic).SetEase(Tween.EaseType.Out);
+        Consume();
+        Transformed?.Invoke(this, next);
     }
 
     private Godot.Collections.Dictionary Ray(Vector3 from, Vector3 to, uint mask)

@@ -48,6 +48,8 @@ public static class Items
 
     public static bool IsPlort(string id) => KindOf(id) == ItemKind.Plort;
     public static bool IsLiquid(string id) => KindOf(id) == ItemKind.Liquid;
+    /// <summary>A slime of any kind: ordinary slimes and largos both count (the game's own "is a slime" test).</summary>
+    public static bool IsSlime(string id) => KindOf(id) is ItemKind.Slime or ItemKind.Largo;
 
     /// <summary>Whether <paramref name="id"/> belongs to a diet food group ("FRUIT", "VEGGIES", "MEAT", "PLORTS", "NONTARRGOLD_SLIMES", "GINGER").</summary>
     public static bool InFoodGroup(string id, string group) => group switch
@@ -57,7 +59,7 @@ public static class Items
         "MEAT" => KindOf(id) == ItemKind.Meat,
         "GINGER" => id == GingerVeggie,
         "PLORTS" => KindOf(id) == ItemKind.Plort && !PlortsNeverEatenAsFood.Contains(id),
-        "NONTARRGOLD_SLIMES" => KindOf(id) == ItemKind.Slime && !TarrSlimes.Contains(id) && !SlimesNeverEatenAsFood.Contains(id),
+        "NONTARRGOLD_SLIMES" => IsSlime(id) && !TarrSlimes.Contains(id) && !SlimesNeverEatenAsFood.Contains(id),
         _ => false,
     };
 

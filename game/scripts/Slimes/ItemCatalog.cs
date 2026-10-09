@@ -28,6 +28,7 @@ public sealed class ItemCatalog
         Actors = actors;
         World = new WorldAssets(scripts.Assets);
         ItemIds = scripts.IdentifiableIds.Values.Keys.ToList();
+        Largos = new Largos(slimes);
         FixedTimestep = GameTimeData.FixedTimestep(scripts.Assets);
     }
 
@@ -43,6 +44,8 @@ public sealed class ItemCatalog
     public GameClock Clock { get; }
     public WorldAssets World { get; }
     public IReadOnlyList<string> ItemIds { get; }
+    /// <summary>Which largo two plorts make (docs/behavior/largos.md).</summary>
+    public Largos Largos { get; }
     /// <summary>The node every item lives under.</summary>
     public Node3D Actors { get; }
 
@@ -52,13 +55,13 @@ public sealed class ItemCatalog
     /// <summary>The items in the world that haven't been taken out of the game.</summary>
     public IEnumerable<Actor> Live => Actors.GetChildren().OfType<Actor>().Where(a => !a.Consumed && GodotObject.IsInstanceValid(a));
 
-    /// <summary>The slime species for an id, or null when it isn't a slime with eating settings.</summary>
+    /// <summary>The slime species for an id (a slime or a largo), or null when it isn't a slime with eating settings.</summary>
     public SlimeSpecies? Species(string id)
     {
         if (!_species.TryGetValue(id, out var species))
         {
-            species = Items.KindOf(id) == ItemKind.Slime && Slimes.TryGet(id, out var info) && info.Eating is not null
-                ? SlimeSpecies.From(info, ItemIds)
+            species = Items.IsSlime(id) && Slimes.TryGet(id, out var info) && info.Eating is not null
+                ? SlimeSpecies.From(info, ItemIds, Largos)
                 : null;
             _species[id] = species;
         }
@@ -161,6 +164,8 @@ public sealed class ItemCatalog
                 for (var s = 0; s < subMeshes; s++)
                 {
                     var material = part.Materials.Count == 0 ? null : part.Materials[Math.Min(s, part.Materials.Count - 1)];
+                    if (IsTransparentEffect(material))
+                        continue;
                     var mesh = World.BuildMesh(part.Mesh, [(s, material)], mirrored: false);
                     if (mesh.GetSurfaceCount() == 0)
                         continue;
@@ -172,6 +177,12 @@ public sealed class ItemCatalog
         }
         return (Node3D)template.Duplicate();
     }
+
+    // A material set to draw in Unity's transparent range (render queue above 2500), such as the rad
+    // slime's aura shell (4001). openranch leaves these out for now: drawn opaque they hide the slime,
+    // and its full-screen fog pass erases transparent objects anyway (UNVERIFIED.md).
+    private bool IsTransparentEffect(AssetRef? materialRef) =>
+        materialRef is { ClassId: UnityClassId.Material } m && Scripts.Assets.Read(m, MaterialData.Read).CustomRenderQueue > 2500;
 
     // Slime bodies and plorts get the gradient stand-in; everything else goes through the world's
     // material conversion. Face layers (eyes, mouth) are drawn as further passes over the body.

@@ -1,7 +1,10 @@
 namespace OpenRanch.Simulation;
 
-/// <summary>What happened when a slime ate: the items it will produce once it has digested.</summary>
-public sealed record Meal(string Food, IReadOnlyList<string> Produced, bool WasFavorite)
+/// <summary>
+/// What happened when a slime ate: the items it will produce once it has digested, or the slime it
+/// turns into at once (<see cref="Becomes"/>, a largo or a tarr; docs/behavior/largos.md).
+/// </summary>
+public sealed record Meal(string Food, IReadOnlyList<string> Produced, bool WasFavorite, string? Becomes = null)
 {
     public static readonly Meal None = new("", [], false);
 }
@@ -46,7 +49,20 @@ public sealed class Slime
     public bool WillEat(string food) =>
         Species.FoodEffect(food) is { } effect && Drive(effect) >= Species.Eating.MinDriveToEat;
 
-    private float Drive(FoodEffect effect) => effect.IgnoresHunger ? 1f : Hunger;
+    /// <summary>
+    /// How much the slime wants a food right now: the food's feeling (hunger, agitation, or 1 for
+    /// neither), raised to the food's floor, plus its extra drive (docs/behavior/largos.md).
+    /// </summary>
+    public float Drive(FoodEffect effect)
+    {
+        var feeling = effect.Driver switch
+        {
+            FoodDriver.Agitation => Agitation,
+            FoodDriver.None => 1f,
+            _ => effect.IgnoresHunger ? 1f : Hunger,
+        };
+        return Math.Max(0f, Math.Max(effect.MinDrive, feeling) + effect.ExtraDrive);
+    }
 
     /// <summary>Lets <paramref name="hours"/> of game time pass.</summary>
     public void Advance(double hours)
@@ -71,25 +87,41 @@ public sealed class Slime
 
     /// <summary>
     /// Feeds the slime. Returns <see cref="Meal.None"/> if it won't eat that now; otherwise the items
-    /// it produces after <see cref="DigestSeconds"/>.
+    /// it produces after <see cref="DigestSeconds"/>. <paramref name="swallowed"/> is false when the bite
+    /// only hurt the food (a slime with health left, bitten by a tarr): the bite still counts for hunger
+    /// and agitation, but nothing comes out (static analysis of SlimeEat).
     /// </summary>
-    public Meal Feed(string food)
+    public Meal Feed(string food, bool swallowed = true)
     {
         if (!WillEat(food))
             return Meal.None;
         var effect = Species.FoodEffect(food)!;
-        if (!effect.IgnoresHunger)
-            Hunger = Math.Clamp(Hunger - Species.Eating.DrivePerEat, 0f, 1f);
+        // Every eat rule that matches the food counts as a meal: a largo's food matches one rule per
+        // plort, so it is fed (and calmed) twice. Static analysis of SlimeEat; docs/behavior/largos.md.
         var calm = effect.IsFavorite ? Species.Eating.AgitationPerFavoriteEat : Species.Eating.AgitationPerEat;
-        Agitation = Math.Clamp(Agitation - calm, 0f, 1f);
-
-        var skip = Species.Eating.ChanceToSkipProduce;
-        if (skip > 0 && _random.NextDouble() < skip)
+        for (var row = 0; row < Math.Max(1, effect.Rows); row++)
+        {
+            if (effect.Driver == FoodDriver.Agitation)
+                Agitation = Math.Clamp(Agitation - Species.Eating.DrivePerEat, 0f, 1f);
+            else if (effect.Driver == FoodDriver.Hunger && !effect.IgnoresHunger)
+                Hunger = Math.Clamp(Hunger - Species.Eating.DrivePerEat, 0f, 1f);
+            Agitation = Math.Clamp(Agitation - calm, 0f, 1f);
+        }
+        if (effect.Becomes is { } becomes)
+            return new Meal(food, [], false, becomes);
+        if (!swallowed)
             return new Meal(food, [], effect.IsFavorite);
+
+        // Each product is its own rule, so each may be skipped on its own.
+        var skip = Species.Eating.ChanceToSkipProduce;
         var produced = new List<string>();
         foreach (var item in effect.Produces)
+        {
+            if (skip > 0 && _random.NextDouble() < skip)
+                continue;
             for (var i = 0; i < effect.CountEach; i++)
                 produced.Add(item);
+        }
         return new Meal(food, produced, effect.IsFavorite);
     }
 }
