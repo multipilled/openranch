@@ -217,9 +217,9 @@ public sealed class SavedRanch
             if (actor is Slimes.SlimeActor s)
             {
                 if (slime.Hunger is { } hunger)
-                    s.Sim.Hunger = hunger;
+                    s.Sim.Hunger = Mathf.Clamp(hunger, 0, 1);
                 if (slime.Agitation is { } agitation)
-                    s.Sim.Agitation = agitation;
+                    s.Sim.Agitation = Mathf.Clamp(agitation, 0, 1);
             }
             Spawned.Add(actor);
             _spawnedIds[actor] = slime.ActorId;

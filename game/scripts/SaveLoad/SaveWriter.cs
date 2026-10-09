@@ -26,11 +26,6 @@ public partial class SaveWriter : Node
     // between scenes). UNVERIFIED.md, "Save key".
     private const Key SaveKey = Key.F5;
 
-    // Saved actors the loader puts into the world are matched to the save by type and exact place
-    // when they appear, within this distance (metres) and this much play time.
-    private const float SameSpot = 0.01f;
-    private const double MatchWindowSeconds = 1;
-
     private readonly SavedRanch _saved;
     private readonly Slimes.M2World _m2;
     private readonly GameEnums _names;
@@ -38,8 +33,6 @@ public partial class SaveWriter : Node
     private readonly bool _quitAfterWrite;
     private readonly double _startHours;
     private readonly int _hunger, _agitation;
-    private readonly Dictionary<int, List<Actor>> _unclaimed;
-    private readonly Dictionary<Slimes.Actor, long> _ids = [];
     private int _earned;
     private double _time;
     private bool _wroteOut;
@@ -55,13 +48,9 @@ public partial class SaveWriter : Node
         _startHours = m2.Clock.TotalHours;
         _hunger = _names.Value(GameEnum.Emotion, "HUNGER");
         _agitation = _names.Value(GameEnum.Emotion, "AGITATION");
-        _unclaimed = saved.Ranch.Actors.GroupBy(a => a.TypeId).ToDictionary(g => g.Key, g => g.ToList());
 
         // The save's money went into the wallet before this node; what comes in from now on is earned.
         m2.Wallet.Changed += amount => _earned += System.Math.Max(0, amount);
-        m2.Catalog.Spawned += OnSpawned;
-        foreach (var actor in m2.Catalog.Live)
-            OnSpawned(actor);
     }
 
     /// <summary>Where the save key writes: openranch's user folder, one file per game.</summary>
@@ -103,27 +92,6 @@ public partial class SaveWriter : Node
             GetTree().Quit(ok ? 0 : 1);
     }
 
-    // A saved actor the loader just put into the world: the saved actor of that type standing exactly
-    // there. It takes the saved moods the world models. (Until the loader hands over the save's ids.)
-    private void OnSpawned(Slimes.Actor actor)
-    {
-        if (_time > MatchWindowSeconds || !TryType(actor.Id, out var type) || !_unclaimed.TryGetValue(type, out var candidates))
-            return;
-        var at = Unity(actor.GlobalPosition);
-        var match = candidates.FirstOrDefault(a => N.Vector3.Distance(new N.Vector3(a.Position.X, a.Position.Y, a.Position.Z), at) <= SameSpot);
-        if (match is null)
-            return;
-        candidates.Remove(match);
-        _ids[actor] = match.ActorId;
-        if (actor is Slimes.SlimeActor slime)
-        {
-            if (match.Emotions.TryGetValue(_hunger, out var hunger))
-                slime.Sim.Hunger = Mathf.Clamp(hunger, 0, 1);
-            if (match.Emotions.TryGetValue(_agitation, out var agitation))
-                slime.Sim.Agitation = Mathf.Clamp(agitation, 0, 1);
-        }
-    }
-
     /// <summary>The ranch as the world holds it now.</summary>
     public RanchState Snapshot(out (int Kept, int Added, int Gone) counts)
     {
@@ -133,7 +101,8 @@ public partial class SaveWriter : Node
         {
             if (!TryType(actor.Id, out var type))
                 continue;
-            long? id = _ids.TryGetValue(actor, out var saved) ? saved : null;
+            // The loader hands over the save's id of every actor it put into the world.
+            long? id = _saved.SpawnedIds.TryGetValue(actor, out var saved) ? saved : null;
             var q = actor.GlobalBasis.GetRotationQuaternion();
             // Mirroring z (UnityConvert) turns a rotation (x, y, z, w) into (-x, -y, z, w).
             var rotation = RanchWriter.EulerDegrees(new N.Quaternion(-q.X, -q.Y, q.Z, q.W));
@@ -143,7 +112,7 @@ public partial class SaveWriter : Node
             var p = Unity(actor.GlobalPosition);
             actors.Add(new LiveActor(id, type, new Vec3(p.X, p.Y, p.Z), rotation, moods));
         }
-        var tracked = _ids.Values.ToHashSet();
+        var tracked = _saved.SpawnedIds.Values.ToHashSet();
         var kept = actors.Count(a => a.ActorId is not null);
         counts = (kept, actors.Count - kept, tracked.Count - kept);
 
