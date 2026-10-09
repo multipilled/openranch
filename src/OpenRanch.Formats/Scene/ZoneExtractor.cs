@@ -229,7 +229,8 @@ public static class ZoneExtractor
                         case "CaveLightController":
                             caveLightController = script.PathId;
                             break;
-                        case "CellDirector":
+                        // The Slimeulations' cells use a subclass; its own fields come after CellDirector's.
+                        case "CellDirector" or "GlitchCellDirector":
                             ambianceZone = CellAmbianceZone(assets, script);
                             break;
                         case "Region":

@@ -29,6 +29,10 @@ public class ZoneTests
         Assert.Equal(25, desert.Cells.Count);
         Assert.All(desert.Cells, c => Assert.Equal(3, c.AmbianceZone)); // DESERT
         Assert.Single(desert.KillVolumes); // the sand sea
+
+        var slimulations = ZoneExtractor.Extract(assets, scene, "zoneSLIMULATIONS");
+        Assert.Equal(21, slimulations.Cells.Count);
+        Assert.All(slimulations.Cells, c => Assert.Equal(9, c.AmbianceZone)); // SLIMULATIONS, from GlitchCellDirector
     }
 
     [GameFact]
