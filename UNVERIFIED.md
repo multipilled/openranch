@@ -57,3 +57,30 @@ before other work relies on it.
 | `--slime-zoo` set-up | floor, 4 m pens, items-only walls, every slime fully hungry | (test set-up only) | m5 slimes |
 | Largo meal effect | counts as two meals (hunger and agitation drop twice) | a recording of a largo eating | m5 slimes |
 | Slime health recovery between tarr bites | none | the health component's recovery | m5 slimes |
+| Teleporter trigger layer | an openranch-only collision bit (`WorldMap.TriggerBit`) | the original's trigger layer | m4 world |
+| Teleporter with several destinations | picked with a fixed seed | the original's shared random generator | m4 world |
+| Actors outside every loaded cell | frozen | the original's wake box (50 x 200 x 50 m) | m4 world |
+| Fall damage | none | the original's `FallDamager` | m4 world |
+| `--world-check` route planner limits (2 m grid, 12 m jetpack climb, 40 m drop) and end point | test settings only | (check only) | m4 world |
+| Player health, radiation and knockback | a value plus an event; knockback is a velocity nudge | `PlayerVitals` and the player's physics | m5 abilities |
+| Ability visuals, auras, faces, sounds, poofs | nothing drawn | the effect prefabs and shaders | m5 abilities |
+| Water calming | not modelled | the water-calm component | m5 abilities |
+| Dervish whirlwind and mini tornado motion | approximated; no vortex | the whirlwind component | m5 abilities |
+| Quantum qubits | appear in place, simplified timing | the qubit spawner | m5 abilities |
+| Tangle vine | drops the food onto the slime | the vine path | m5 abilities |
+| Mosaic glints | one object for all three phases, never burst | the glint component | m5 abilities |
+| Ash and water for fire/puddle slimes | simple boxes (`FeedingPatch`), poof clock simplified | the original's patches | m5 abilities |
+| Golden Sureshot, gold slime chomp pause | not modelled | the vacpack upgrade and gold slime code | m5 abilities |
+| Feral aura, glaring, "no hostiles" mode, bites while held | missing | the feral components and game settings | m5 abilities |
+| Gordo snares, event gordos, holiday crates | not modelled | their components | m5 abilities |
+| Random draws for produce, coops, machines | openranch's own `System.Random` | the original's shared random source | m6 plots |
+| Rotten produce look | dark tint | the prefab's rotten material | m6 plots |
+| Ripe produce falling off | small upward push, spawned without the joint's rotation | 80 N along the joint plus random spin | m6 plots |
+| Plort collector | takes plorts at once; centre ± radius against the area box | its reel-in over a few seconds | m6 plots |
+| Silo output and "vacpack is pulling" | no hold speed-up; suction cone on the catcher's centre within 45° | the silo's output code | m6 plots |
+| Feeder push | one physics step of the original's force, Godot noise | the feeder's force code | m6 plots |
+| Hens finding a rooster and counting the crowd | by distance over all live actors | the original's same-cell lists | m6 plots |
+| Incinerator trigger | a copy of its solid collider | its own trigger shape | m6 plots |
+| Food counted for ash | approximated by item kind | the incinerator's rule | m6 plots |
+| Rain | none; crops' stored water only drains | the weather/rain system | m6 plots |
+| Far areas | never paused; everything keeps growing | the original's area catch-up | m6 plots |
