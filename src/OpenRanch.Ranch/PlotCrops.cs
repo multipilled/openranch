@@ -136,6 +136,30 @@ public sealed class PlotCrops
         return found;
     }
 
+    /// <summary>
+    /// What a garden plants (its <c>GardenCatcher</c>'s <c>plantable</c> list): for each produce item id
+    /// thrown in, the crop (<see cref="GameEnum.SpawnResource"/>) of its planted prefab and of its deluxe
+    /// planted prefab (a deluxe garden plants the deluxe one; static analysis of <c>GardenCatcher.Plant</c>).
+    /// </summary>
+    public static Dictionary<string, (int Crop, int DeluxeCrop)> Plantable(GameScripts scripts)
+    {
+        var result = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        foreach (var (at, catcher) in scripts.OfClass("GardenCatcher"))
+        {
+            foreach (var slot in catcher.Data!.List("plantable").OfType<SerializedObject>())
+            {
+                int? CropOf(string field) => slot[field] is PPtr p && scripts.Assets.Resolve(at.File, p) is { ClassId: UnityClassId.GameObject } go
+                                             && SpawnResourceOf(scripts, go) is { } s ? Convert.ToInt32(s.Data["id"]) : null;
+                if (CropOf("plantedPrefab") is not { } crop)
+                    continue;
+                result.TryAdd(scripts.IdentifiableIds.NameOf(Convert.ToInt64(slot["id"])), (crop, CropOf("deluxePlantedPrefab") ?? crop));
+            }
+            if (result.Count > 0)
+                break;
+        }
+        return result;
+    }
+
     private static bool ForcesFirstRipeness(GameScripts scripts, AssetRef gameObject) =>
         scripts.Assets.Read(gameObject, GameObjectData.Read).Components.Any(c => scripts.Follow(gameObject.File, c) is { Data.ScriptClass: "SpawnResourceForceFirstRipeness" });
 

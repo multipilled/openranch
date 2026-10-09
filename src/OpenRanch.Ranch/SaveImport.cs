@@ -202,6 +202,11 @@ public static class SaveImport
         OasisStates = Map(w.Map("oasisStates"), k => (string)k, v => (bool)v!),
         ActiveGingerPatches = Strings(w.List("activeGingerPatches")),
         EchoNoteGordos = Map(w.Map("echoNoteGordos"), k => (string)k, v => (int?)(v as SaveBlock)?.Get<int>("state")),
+        ResourceSpawners = w.Map("resourceSpawnerWater").Select(kv =>
+        {
+            var times = (SaveBlock)kv.Value!;
+            return new CropTimes(Vector(kv.Key), times.Get<double>("spawnTime"), times.Get<float>("water"));
+        }).ToList(),
     };
 
     private static List<AmmoSlot> Ammo(List<object?> slots) => slots.Select(s => Slot((SaveBlock)s!)).ToList();

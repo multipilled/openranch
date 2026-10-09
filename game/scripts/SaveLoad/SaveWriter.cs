@@ -92,6 +92,15 @@ public partial class SaveWriter : Node
             GetTree().Quit(ok ? 0 : 1);
     }
 
+    /// <summary>The clocks the world runs on an actor (produce, hens, chicks; RanchEconomy/RanchProduce.cs), or null.</summary>
+    public System.Func<Slimes.Actor, ActorTimers?>? Timers { get; set; }
+
+    /// <summary>Actors in the world the original doesn't save (rotten produce), left out of the save.</summary>
+    public System.Func<Slimes.Actor, bool>? Unsaved { get; set; }
+
+    /// <summary>Every crop's clock now, when the world runs them.</summary>
+    public System.Func<IReadOnlyList<CropTimes>>? Crops { get; set; }
+
     /// <summary>The ranch as the world holds it now.</summary>
     public RanchState Snapshot(out (int Kept, int Added, int Gone) counts)
     {
@@ -99,7 +108,7 @@ public partial class SaveWriter : Node
         var actors = new List<LiveActor>();
         foreach (var actor in _m2.Catalog.Live)
         {
-            if (!TryType(actor.Id, out var type))
+            if (!TryType(actor.Id, out var type) || Unsaved?.Invoke(actor) == true)
                 continue;
             // The loader hands over the save's id of every actor it put into the world.
             long? id = _saved.SpawnedIds.TryGetValue(actor, out var saved) ? saved : null;
@@ -110,7 +119,7 @@ public partial class SaveWriter : Node
                 ? new Dictionary<int, float> { [_hunger] = slime.Sim.Hunger, [_agitation] = slime.Sim.Agitation }
                 : new Dictionary<int, float>();
             var p = Unity(actor.GlobalPosition);
-            actors.Add(new LiveActor(id, type, new Vec3(p.X, p.Y, p.Z), rotation, moods));
+            actors.Add(new LiveActor(id, type, new Vec3(p.X, p.Y, p.Z), rotation, moods, Timers?.Invoke(actor)));
         }
         var tracked = _saved.SpawnedIds.Values.ToHashSet();
         var kept = actors.Count(a => a.ActorId is not null);
@@ -141,6 +150,7 @@ public partial class SaveWriter : Node
                 .ToDictionary(kv => _names.Value(GameEnum.ItemId, kv.Key), kv => kv.Value),
             // The vacpack of normal play; a slime sucked up left the world and is kept here.
             Ammo = new Dictionary<int, IReadOnlyList<AmmoSlot>> { [_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)] = PlayerVacpack.Save(_m2.Pack, _names) },
+            ResourceSpawners = Crops?.Invoke(),
             TrackedActorIds = tracked,
             Actors = actors,
         };

@@ -187,15 +187,18 @@ public partial class M3Check : Node
         var hasCycle = (string id) => _m2.Catalog.Prefabs.Has(id) && _m2.Catalog.Prefabs.Get(id).RootScript("ResourceCycle") is not null;
         var onJoints = ZoneActors.Of(reader, _saved.Zone, _names, _saved.Crops, hasCycle).Where(a => a.Joint is not null).ToList();
         var hold = _saved.Hold!;
-        var hanging = hold.Hanging.ToHashSet();
         var heldSpawns = _saved.SpawnedLoose.Where(s => s.Saved.Joint is not null).ToList();
-        var picked = heldSpawns.Count(s => !GodotObject.IsInstanceValid(s.Actor) || s.Actor.Consumed);
+        // The save's produce still hanging; produce the clock let fall (its ripe hours ran out) is counted apart,
+        // and produce the crops grew since loading isn't the save's.
+        var fellOnTime = heldSpawns.Count(s => hold.FellOnTime.Contains(s.Actor));
+        var hanging = hold.Hanging.Intersect(heldSpawns.Select(s => s.Actor)).ToHashSet();
+        var picked = heldSpawns.Count(s => (!GodotObject.IsInstanceValid(s.Actor) || s.Actor.Consumed) && !hold.FellOnTime.Contains(s.Actor));
         var moved = heldSpawns.Where(s => hanging.Contains(s.Actor) && N.Vector3.Distance(Unity(s.Actor.GlobalPosition), s.Saved.Position) > 0.01f).ToList();
         // Slimes leave hanging produce alone (CropHold), so nothing is picked without the vacpack.
         var edibleHanging = hanging.Count(a => a.Edible);
-        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count == onJoints.Count && picked == 0
+        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count + fellOnTime == onJoints.Count && picked == 0
               && edibleHanging == 0 && moved.Count == 0,
-            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging ({edibleHanging} edible), {picked} eaten; " +
+            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging ({edibleHanging} edible), {fellOnTime} fell when ripe, {picked} eaten; " +
             $"save {onJoints.Count} ({onJoints.Count(a => a.Unripe)} unripe); {moved.Count} moved");
 
         // Nothing loose fell through the ground; what slimes ate is reported.

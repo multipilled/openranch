@@ -26,6 +26,7 @@ public partial class M6Check : Node
     private readonly string[] _args;
     private readonly StringBuilder _report = new("m6-check:\n");
     private bool _passed = true;
+    private ProduceCheck? _produce;
 
     public M6Check(Economy economy, string[] args)
     {
@@ -53,7 +54,8 @@ public partial class M6Check : Node
             await Seconds(1);
             await Plots();
             await Expansion();
-            await new ProduceCheck(this, _economy).Run();
+            _produce = new ProduceCheck(this, _economy);
+            await _produce.Run();
             await Sleep();
         }
         catch (Exception e)
@@ -252,5 +254,6 @@ public partial class M6Check : Node
         Check(read.Player.Money == Money && Math.Abs(read.WorldTime - _economy.Clock.Ranch.WorldTime) < 1,
             $"the save's money {read.Player.Money} (wallet {Money}) and world time {new WorldClock(read.WorldTime)}");
         Check(read.Plots.Count == _economy.Plots.Ranch.Plots.Count, $"the save lists {read.Plots.Count} plot sites");
+        _produce?.CheckSave(read);
     }
 }

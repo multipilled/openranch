@@ -45,7 +45,7 @@ public partial class RanchPlots : Node3D
     private readonly Slimes.M2World _m2;
     private readonly PhysicsLayers _layers;
     private readonly Dictionary<string, Site> _sites = new();
-    private readonly int _noCrop;
+    private readonly int _noCrop, _deluxeGarden;
 
     public RanchPlots(SaveLoad.SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, PhysicsLayers layers, GameEnums names)
     {
@@ -61,7 +61,9 @@ public partial class RanchPlots : Node3D
         Catalog = PlotCatalog.Read(m2.Scripts);
         Rules = new PlotRules(Catalog, names);
         Purse = new WalletPurse(m2.Wallet);
+        Plantable = OpenRanch.Ranch.PlotCrops.Plantable(m2.Scripts);
         _noCrop = names.Value(GameEnum.SpawnResource, "NONE");
+        _deluxeGarden = names.Value(GameEnum.PlotUpgrade, "DELUXE_GARDEN");
         foreach (var site in Layout.Sites)
         {
             // A save lists every site; a ranch that doesn't gets the scene's own plot there, as stored.
@@ -78,6 +80,8 @@ public partial class RanchPlots : Node3D
     public PlotCrops Crops { get; }
     public PlotRules Rules { get; }
     public IPurse Purse { get; }
+    /// <summary>What a garden plants for each produce thrown into it (<see cref="OpenRanch.Ranch.PlotCrops.Plantable"/>).</summary>
+    public IReadOnlyDictionary<string, (int Crop, int DeluxeCrop)> Plantable { get; }
 
     public IEnumerable<Site> Sites => _sites.Values;
     public Site? Get(string siteId) => _sites.GetValueOrDefault(siteId);
@@ -115,6 +119,19 @@ public partial class RanchPlots : Node3D
         Rebuild(_sites[siteId]);
         Changed?.Invoke(siteId);
         return true;
+    }
+
+    /// <summary>
+    /// Plants what fell into a garden's hole, when the garden has no crop and plants that produce: a
+    /// deluxe garden plants the deluxe crop (static analysis of <c>GardenCatcher.CanAccept</c> and <c>Plant</c>).
+    /// </summary>
+    public bool Catch(string siteId, Node body)
+    {
+        if (body is not Slimes.Actor actor || !IsInstanceValid(actor) || actor.Consumed || Ranch.FindPlot(siteId) is not { } plot
+            || plot.AttachedResource != _noCrop || !Plantable.TryGetValue(actor.Id, out var crop))
+            return false;
+        actor.Consume();
+        return Plant(siteId, plot.HasUpgrade(_deluxeGarden) ? crop.DeluxeCrop : crop.Crop);
     }
 
     private PlotPurchase Do(string siteId, Func<PlotPurchase> purchase)
@@ -174,6 +191,19 @@ public partial class RanchPlots : Node3D
         var tree = prefab.Tree!;
         foreach (var trigger in tree.Triggers.Where(t => t.Region.Class == "UIActivator" && tree.IsOn(t.Chain, placed.Upgrades.Switched)))
             node.AddChild(Activator(trigger.Region.ToRoot * site.Info.PlotWorld, trigger.Region, SiteMeta, site.Info.Id, trigger.Sphere));
+        // A garden's planting hole: produce thrown in is planted (GardenCatcher.OnTriggerEnter).
+        foreach (var trigger in tree.Triggers.Where(t => t.Region.Class == "GardenCatcher" && tree.IsOn(t.Chain, placed.Upgrades.Switched)))
+        {
+            var catcher = Activator(trigger.Region.ToRoot * site.Info.PlotWorld, trigger.Region, SiteMeta, site.Info.Id, trigger.Sphere);
+            catcher.Name = "GardenCatcher";
+            catcher.CollisionLayer = 0;
+            catcher.CollisionMask = Slimes.Actor.ActorLayer;
+            catcher.Monitoring = true;
+            catcher.Monitorable = false;
+            var id = site.Info.Id;
+            catcher.BodyEntered += body => Callable.From(() => Catch(id, body)).CallDeferred();
+            node.AddChild(catcher);
+        }
         site.Node = node;
         AddChild(node);
     }

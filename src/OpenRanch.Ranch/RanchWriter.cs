@@ -6,7 +6,15 @@ namespace OpenRanch.Ranch;
 /// <param name="ActorId">The save's id when the actor came from the loaded save; null for one that appeared in play.</param>
 /// <param name="TypeId">What it is (<see cref="GameEnum.ItemId"/>).</param>
 /// <param name="Emotions">The moods the world models (<see cref="GameEnum.Emotion"/>); others keep the saved value.</param>
-public sealed record LiveActor(long? ActorId, int TypeId, Vec3 Position, Vec3 Rotation, IReadOnlyDictionary<int, float> Emotions);
+/// <param name="Timers">The clocks the world runs on it (produce stage, laying, growing up); null keeps the saved ones.</param>
+public sealed record LiveActor(long? ActorId, int TypeId, Vec3 Position, Vec3 Rotation, IReadOnlyDictionary<int, float> Emotions, ActorTimers? Timers = null);
+
+/// <summary>
+/// An actor's clocks as the world runs them; a null member keeps the saved value. <see cref="CycleState"/>
+/// is produce's stage (<see cref="GameEnum.ResourceCycleState"/>) and <see cref="CycleProgressTime"/> when
+/// it ends; <see cref="ReproduceTime"/> is when a hen next lays and <see cref="TransformTime"/> when a chick grows up.
+/// </summary>
+public sealed record ActorTimers(int? CycleState = null, double? CycleProgressTime = null, double? ReproduceTime = null, double? TransformTime = null);
 
 /// <summary>A plot as the running world holds it: what is built on the site and the upgrades bought.</summary>
 public sealed record LivePlot(int Type, IReadOnlyList<int> Upgrades);
@@ -33,6 +41,8 @@ public sealed class LiveRanch
     public IReadOnlyDictionary<int, IReadOnlyList<AmmoSlot>> Ammo { get; init; } = new Dictionary<int, IReadOnlyList<AmmoSlot>>();
     /// <summary>The plort market's saturation now for each plort it buys (<see cref="GameEnum.ItemId"/>); others keep the saved value.</summary>
     public IReadOnlyDictionary<int, float> MarketSaturation { get; init; } = new Dictionary<int, float>();
+    /// <summary>Every crop's clock now, when the world runs them; null keeps the saved clocks.</summary>
+    public IReadOnlyList<CropTimes>? ResourceSpawners { get; init; }
     /// <summary>Where the player's feet are now, when the world placed the player from the save; null keeps the saved place.</summary>
     public Vec3? PlayerPosition { get; init; }
     /// <summary>The player's view now as the original stores it (pitch, yaw and roll, in Euler degrees); null keeps the saved view.</summary>
@@ -78,6 +88,8 @@ public static class RanchWriter
             ranch.Player.Position = position;
         if (live.PlayerRotation is { } rotation)
             ranch.Player.Rotation = rotation;
+        if (live.ResourceSpawners is { } crops)
+            ranch.World.ResourceSpawners = [.. crops];
         foreach (var (item, saturation) in live.MarketSaturation)
             ranch.World.MarketSaturation[item] = saturation;
         foreach (var (mode, slots) in live.Ammo)
@@ -135,6 +147,13 @@ public static class RanchWriter
         actor.Rotation = live.Rotation;
         foreach (var (emotion, level) in live.Emotions)
             actor.Emotions[emotion] = Math.Clamp(level, 0f, 1f);
+        if (live.Timers is { } t)
+        {
+            actor.CycleState = t.CycleState ?? actor.CycleState;
+            actor.CycleProgressTime = t.CycleProgressTime ?? actor.CycleProgressTime;
+            actor.ReproduceTime = t.ReproduceTime ?? actor.ReproduceTime;
+            actor.TransformTime = t.TransformTime ?? actor.TransformTime;
+        }
         return actor;
     }
 

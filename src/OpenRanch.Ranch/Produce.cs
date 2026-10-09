@@ -54,6 +54,9 @@ public sealed class ProduceCycle(ProduceTimes times, IDraws draws)
     public ProduceStage Stage { get; set; } = ProduceStage.Edible;
     public double ProgressTime { get; set; }
 
+    /// <summary>Each stage entered and the world time it began (for checks and reports).</summary>
+    public List<(ProduceStage Stage, double At)> History { get; } = [];
+
     /// <summary>Hours varied as the original varies every stage: times 0.9 to 1.1.</summary>
     public float Vary(float hours) => draws.Range(0.9f, 1.1f) * hours;
 
@@ -62,6 +65,7 @@ public sealed class ProduceCycle(ProduceTimes times, IDraws draws)
     {
         Stage = ProduceStage.Edible;
         ProgressTime = Math.Max(now, Start) + Vary(Times.EdibleHours) * 3600.0;
+        History.Add((Stage, now));
     }
 
     /// <summary>Produce hung on a crop's joint: unripe for its varied unripe hours (<c>ResourceCycle.Attach</c>).</summary>
@@ -69,6 +73,7 @@ public sealed class ProduceCycle(ProduceTimes times, IDraws draws)
     {
         Stage = ProduceStage.Unripe;
         ProgressTime = Math.Max(now, Start) + Vary(Times.UnripeHours) * 3600.0;
+        History.Add((Stage, now));
     }
 
     /// <summary>Sets when the current stage ends and moves through every stage already due (<c>ResourceCycle.ProgressResource</c>).</summary>
@@ -101,6 +106,7 @@ public sealed class ProduceCycle(ProduceTimes times, IDraws draws)
                     break;
                 case ProduceStage.Rotten:
                     Stage = ProduceStage.Gone;
+                    History.Add((Stage, Math.Min(now, ProgressTime)));
                     ProgressTime = double.MaxValue;
                     break;
                 default:
@@ -121,7 +127,9 @@ public sealed class ProduceCycle(ProduceTimes times, IDraws draws)
     private void Next(ProduceStage stage, float hours, double now)
     {
         Stage = stage;
-        ProgressTime = Math.Min(now, ProgressTime) + Vary(hours) * 3600.0;
+        var began = Math.Min(now, ProgressTime);
+        History.Add((stage, began));
+        ProgressTime = began + Vary(hours) * 3600.0;
     }
 }
 
