@@ -6,9 +6,9 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 | Area | Owner session | Worktree / branch |
 |---|---|---|
-| src/OpenRanch.Formats/Scene; game/scripts/World (except WorldLighting's clock); game/scripts/CollisionCheck.cs; docs/behavior/zones.md; teleporter/region code; a small hook in game/scripts/Ranch.cs | SR M4 one world (redo card; WIP 3a5a737) | openranch-m4world / m4-world |
-| game/scripts/Slimes (except M2World.cs); src/OpenRanch.Simulation slime rules; new Simulation tests; docs/behavior/slimes.md, largos.md, slime-traits.md; new gordo/feral files | SR M5 gordos, feral, abilities (redo card; WIP 8a8aa56) | openranch-m5abilities / m5-abilities |
-| game/scripts/SaveLoad; src/OpenRanch.Ranch; game/scripts/Slimes/M2World.cs; game/scripts/Market; new game/scripts/Ranch* UI files for plots and expansions; docs/behavior/plots.md, ranch-saves.md; new tests | SR M6 plots and expansions (redo card; WIP 166c1c4) | openranch-m6plots / m6-plots |
+| game/scripts/SaveLoad; game/scripts/RanchEconomy; game/scripts/Home; game/scripts/Slimes/M2World.cs, ItemCatalog.cs, SlimeZoo.cs, ZooTrial.cs; src/OpenRanch.Ranch; the joined-world hooks in game/scripts/World/WorldMap.cs; game/scripts/Ranch.cs | SR integration: saves and checks across M4/M5/M6 (proposed) | openranch-integ / integ |
+| new game/scripts/UI (menus, HUD, vacpack UI, Slimepedia, mail); game/scripts/Main.cs; game/scripts/Market/Hud.cs; scenes for menus; docs/behavior/ui.md | SR M7 menus and HUD (proposed) | openranch-m7ui / m7-ui |
+| new game/scripts/Audio; src/OpenRanch.Formats audio readers (existing); docs/behavior/audio.md; one-line sound hooks in others' files listed in the final message | SR M8 sound in game (proposed) | openranch-m8audio / m8-audio |
 | (paused, not merged: clean-room redo pending) landscape and paint shaders | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
 | README.md, OpenRanch.sln (except adding your own new projects), COORDINATION.md, UNVERIFIED.md structure, tools/, merges | coordinator (SR workstreams) | main checkout |
 
@@ -25,33 +25,31 @@ Milestones, weighted by size (out of 100). Progress = the sum of finished weight
 | M1 | Walk The Ranch: world, collision, zone lighting | 8 | 7 | works; the clean-room look redo is still open |
 | M2 | Core loop: slimes eat and make plorts, vacpack, corrals, plort market | 8 | 7 | 3 slime types; tabby pounce and plort lifetime open |
 | M3 | Ranch save: full load, save back, running day cycle | 6 | 6 | done; M3 rest (vacpack/market/player saved, sleep, one clock) is polish |
-| M4 | Every zone walkable: Dry Reef, Indigo Quarry, Moss Blanket, Ancient Ruins, Glass Desert, Wilds, secret areas, teleporters | 18 | 7 | all 14 zone roots build and walk 40/40 alone; joining into one world next |
-| M5 | Every slime, largo, gordo and tarr; feral; food, crops and chickens growing | 15 | 5 | all 113 slime definitions (91 largos), largo and tarr forming; gordos, feral, abilities next |
-| M6 | Ranch economy: building and upgrading plots, expansions, Lab (refinery, fabricator, gadgets), Exchange, 7Zee | 15 | 0 | |
+| M4 | Every zone walkable: Dry Reef, Indigo Quarry, Moss Blanket, Ancient Ruins, Glass Desert, Wilds, secret areas, teleporters | 18 | 12 | one joined world: cells stream by region, teleporters, saves start where the player saved, all 41 plot sites; left: Quarry route, Ruins temple exit, zone spawners, fall damage |
+| M5 | Every slime, largo, gordo and tarr; feral; food, crops and chickens growing | 15 | 10 | all slimes, largos, tarr, 14 gordos, feral, abilities, feeding habits; produce and coops (M6); left: zone spawners, effects, glitch/quicksilver, water calming |
+| M6 | Ranch economy: building and upgrading plots, expansions, Lab (refinery, fabricator, gadgets), Exchange, 7Zee | 15 | 6 | build/upgrade plots, expansions, produce, coops, silo, feeder, collector, incinerator, save on sleep; left: upgrade effects, ponds, Lab, Exchange, 7Zee |
 | M7 | Game flow and UI: menus, HUD, vacpack UI, Slimepedia, mail, options, save slots | 10 | 0 | |
 | M8 | Sound and look: music, sound effects, clean-room landscape, foliage, water and sky | 8 | 1 | sound and text readers done |
 | M9 | Story and completion: Ogden, Mochi, Viktor, Slimeulations, achievements, ending | 7 | 0 | |
-| | **Total** | **100** | **38** | |
+| | **Total** | **100** | **54** | |
 
 Main (2026-10-09): M0-M2 done; M3 loading, save back (`--save-out`, F5) and the running day cycle merged.
-Main (2026-10-09): M3 rest, M4 zones and M5 slimes merged. On main: `--m3-check` PASS (Game2_4, Logansfarm_5,
-re-saved .ranch.json), `--day-check`, `--sleep-check`, `--m2-check`, `--slime-zoo` PASS, collision 40/40 on The Ranch and
-the main zones. Finished tasks are in git history; this table holds open work only.
+Main (2026-10-09): M4 one world, M5 gordos/feral/abilities and M6 plots/expansions/produce merged (redo workers after the
+power loss). On main: `--m3-check` PASS (Game2_4, Logansfarm_5 x3), `--world-check`, `--save-check`, `--day-check`,
+`--sleep-check`, `--m2-check` PASS, `--m6-check` PASS (run it as `--new-game --money 20000 --day-speed 720 --m6-check
+--sleep-save FILE`), collision 40/40, tests 225/225. Known failures are the P1 row below.
 
 | P | Task | Owner | Status | Done-check |
 |---|---|---|---|---|
-| P2 | M4 one world: build zone roots side by side (shared coordinates), load/unload cells by region box, region sets (Far, Far Range vs Slimeulations/Viktor), teleporters wired source to destination, kill volumes across zones, a player saved outside The Ranch starts where they saved, the save's 15 outside plot sites appear | SR M4 one world (openranch-m4world) | proposed | walk and jetpack from The Ranch into the Dry Reef in one run; a teleporter trip lands on its destination; `--save Game2_4` starts in the Glass Desert; outside plots match the save; collision PASS |
-| P2 | M5 gordos, feral and abilities: gordos (feeding, bursting, rewards), feral slimes, phosphor vanishing outside 18-6, Boom/Rad/Crystal/Quantum/Dervish/Tangle/Hunter/Mosaic abilities, feeding behaviours (tabby/saber pounce, gold fleeing, lucky coins, fire eats ash, puddle drinks water) | SR M5 gordos, feral, abilities (openranch-m5abilities) | proposed | `--slime-zoo` extended: each ability fires and a gordo bursts after its meals; PASS twice |
-| P2 | M6 plots and expansions: build, demolish and upgrade plots at a plot site for the data's prices; buy expansions (barriers lift); produce ripens, rots and regrows; feeders, plort collectors, silos, ash run; save on sleep through a minimal ranch house screen | SR M6 plots and expansions (openranch-m6plots) | proposed | headless `--m6-check`: build a corral and upgrade it, buy an expansion, money drops by the data's prices, produce cycles at the data's times, save-out round-trips; m3-check PASS |
-| P2 | Scripted vac-and-save check: suck up a slime, save-out, reload, slime is in the vacpack | unassigned | later | check PASS |
-| P3 | Render redo, clean room (landscape/paint look from behaviour notes). m1-render-polish is NEVER merged. Also glitch walls (flat white), Reef Hub terrain not drawn, transparent slime auras, mosaic glass | unassigned | paused | 5 reference spots closer than now; UNVERIFIED rows closed with sources |
-| P3 | `--m3-check` market line fails on a save made just before midnight; slime fear not modelled; `SavedRanch.Load` opens a second GameScripts | unassigned | later | |
+| P1 | Integration across M4/M5/M6: (a) `--save Game2_4 --save-out X` from the joined world (player in the Desert), then `--save X --m3-check`: 10 loose actors fall, every time (from The Ranch alone it passes); (b) the `--m6-check` sleep save reloaded with `--m3-check`: 6 loose actors fall; (c) `--slime-zoo` is flaky (94-750 s; GOLD vanished once; CRYSTAL/QUANTUM/DERVISH/TANGLE trials failed in the joined world); (d) `--m6-check` without `--sleep-save` hangs instead of failing; (e) `M3Check` plot-ground test should skip plots in unloaded cells so it can run in the joined world; (f) wire `Catalog.InCave`, `OnRanchOrWilds` and `Patches` (ash troughs from the incinerator, water) in M2World; (g) Logansfarm_5 slime-outside-corral flake | SR integration (openranch-integ) | proposed | (a), (b) PASS 3 of 3; `--slime-zoo` PASS 3 of 3 under 150 s; (d) fails fast; `--m3-check` also runs in the joined world; fire slimes eat incinerator ash in game |
+| P2 | M7 menus and HUD: main menu, new game / load game slots, pause, options, the original's HUD (money, clock, health/energy, vacpack slots) from its UI data, Slimepedia, mail | SR M7 menus and HUD (openranch-m7ui) | proposed | `--ui-check`: start a new game and load a save through the menus, HUD shows the save's money/time/slots; captures look like the original's layout |
+| P2 | M8 sound in game: zone and time-of-day music from the install's music data, ambience, and sound effects for slimes, vacpack, market, plots, through one event bus | SR M8 sound in game (openranch-m8audio) | proposed | `--audio-check`: the right track plays per zone and hour; each hooked event plays its clip from the install |
+| P2 | M5 zones come alive: DirectedActorSpawner (wild and feral slimes), wild produce, zone gordos at their scene spots, slimes outside corrals in saves | unassigned | after integration (shares Slimes files) | slimes and food appear in each zone at the data's rates |
+| P2 | M6 upgrades and Lab: what plot upgrades do (walls, music box, air net, solar shield, scareslime, miracle mix), ponds, silo/feeder buttons; then Lab: refinery, fabricator, gadgets | unassigned | after integration (shares SaveLoad files) | upgrade effects match the data; fabricate a gadget from refinery stock |
+| P2 | M4 rest: on-foot route Reef to Quarry (or confirm jetpack), Ruins temple exit, fall damage | unassigned | later | |
+| P3 | Render redo, clean room. m1-render-polish is NEVER merged. Also glitch walls, Reef Hub terrain, slime auras/effects, mosaic glass | unassigned | paused | |
 
-Running now: M4 one world, M5 gordos/feral/abilities, M6 plots and expansions (M6 started early: it doesn't overlap M4/M5 files).
-
-Power loss 2026-10-09 ~2:57 AM ET killed all three workers mid-task. Their uncommitted work is saved as WIP commits on
-their branches (m4-world 3a5a737, m5-abilities 8a8aa56, m6-plots 166c1c4; none built). m4-world's zeroed WorldCheck.cs and
-WorldMap.cs were rebuilt exactly by replaying the dead worker's transcript. Fresh workers continue from the WIP (cards).
+Next: the integration worker first (P1), with M7 menus/HUD and M8 sound in parallel (separate files).
 
 Stale folders: D:\Projects\openranch-m3load and openranch-faces are empty but held open (their old
 sessions); delete once those sessions are archived.
