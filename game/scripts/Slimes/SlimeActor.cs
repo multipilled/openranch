@@ -49,6 +49,9 @@ public partial class SlimeActor : Actor
     // The prefab's other behaviour pieces (feral, abilities, feeding habits) and the one in charge.
     private readonly List<SlimeBehaviour> _behaviours = [];
     private SlimeBehaviour? _behaviour;
+    // Where food seeking, hovering, rolling and wandering sit among the prefab's components (ties go to the earlier).
+    private readonly int _foodOrder, _hoverOrder, _rollOrder, _wanderOrder;
+    private readonly bool _stalks;
 
     public SlimeActor(ItemCatalog catalog, SlimeSpecies species, ItemPrefab prefab)
     {
@@ -80,6 +83,11 @@ public partial class SlimeActor : Actor
         _nextRoll = SlimeTraits.Delay(SlimeTraits.RollMinDelay, SlimeTraits.RollMaxDelay, Sim.Agitation, _random.NextDouble());
 
         Prefab = prefab;
+        _foodOrder = SlimeBehaviours.OrderOf(prefab, "GotoConsumable");
+        _stalks = prefab.RootScript("StalkConsumable") is not null;
+        _hoverOrder = SlimeBehaviours.OrderOf(prefab, "SlimeHover");
+        _rollOrder = SlimeBehaviours.OrderOf(prefab, "RockSlimeRoll");
+        _wanderOrder = SlimeBehaviours.OrderOf(prefab, "SlimeRandomMove");
         // SlimeFeral removes itself from normal-sized slimes, so only largos can be feral (static analysis).
         if (prefab.RootScript("SlimeFeral") is { } feral && prefab.VacuumSize != 0)
             Feral = new Feral(new FeralSettings(
@@ -234,15 +242,28 @@ public partial class SlimeActor : Actor
         var hoverDue = _hovers && _age >= _nextHover;
         var rollDue = _rolls && _age >= _nextRoll && _grounded;
         var foodRelevancy = best is null ? 0f : SlimeMotion.FoodRelevancy(bestDrive);
-        // The behaviour pieces compete too; the most relevant one wins over food, traits and wandering.
+        // Everything competes like the original's sub-behaviours: in the prefab's component order, only
+        // a strictly higher relevancy takes the lead, so ties go to the earlier component.
+        var choice = Activity.Wander;
         SlimeBehaviour? piece = null;
-        var pieceRelevancy = 0f;
+        var (lead, leadOrder) = (SlimeMotion.WanderRelevancy, _wanderOrder);
+        void Offer(float relevancy, int order, Activity activity, SlimeBehaviour? behaviour = null)
+        {
+            if (relevancy > lead || (relevancy == lead && order < leadOrder))
+                (lead, leadOrder, choice, piece) = (relevancy, order, activity, behaviour);
+        }
+        // StalkConsumable replaces going straight for food (it forbids GotoConsumable).
+        if (best is not null && !_stalks)
+            Offer(foodRelevancy, _foodOrder, Activity.Food);
+        if (hoverDue)
+            Offer(SlimeTraits.TraitRelevancy, _hoverOrder, Activity.Hover);
+        if (rollDue)
+            Offer(SlimeTraits.TraitRelevancy, _rollOrder, Activity.Roll);
         foreach (var b in _behaviours)
-            if (b.Relevancy(_grounded) is var r && r > pieceRelevancy)
-                (piece, pieceRelevancy) = (b, r);
-        var otherRelevancy = Math.Max(Math.Max(foodRelevancy, SlimeMotion.WanderRelevancy), hoverDue || rollDue ? SlimeTraits.TraitRelevancy : 0f);
+            Offer(b.Relevancy(_grounded), b.Order, Activity.Behaviour, b);
+
         var previous = _activity == Activity.Behaviour ? _behaviour : null;
-        if (piece is not null && pieceRelevancy > otherRelevancy)
+        if (piece is not null)
         {
             if (piece != previous)
             {
@@ -256,15 +277,15 @@ public partial class SlimeActor : Actor
         }
         previous?.Deselected();
         _behaviour = null;
-        if ((hoverDue || rollDue) && SlimeTraits.TraitRelevancy >= foodRelevancy)
+        if (choice is Activity.Hover or Activity.Roll)
         {
-            if (hoverDue)
+            if (choice == Activity.Hover)
                 StartHover();
             else
                 StartRoll();
             _target = null;
         }
-        else if (best is not null && SlimeMotion.PrefersFood(bestDrive))
+        else if (choice == Activity.Food)
         {
             if (_activity != Activity.Food)
             {

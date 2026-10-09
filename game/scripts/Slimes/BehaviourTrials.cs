@@ -16,6 +16,9 @@ public static class BehaviourTrials
     public static IEnumerable<ZooTrial> All(ItemCatalog catalog)
     {
         yield return new FeralTrial();
+        foreach (var trial in AbilityTrials.All(catalog))
+            yield return trial;
+        // Last: it waits for everything else, then moves the clock to dawn.
         yield return new PhosphorTrial();
     }
 

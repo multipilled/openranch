@@ -66,6 +66,17 @@ public sealed class ItemCatalog
     /// poof. Without it everything counts as The Ranch (openranch only runs slimes there so far).
     /// </summary>
     public Func<Vector3, bool>? OnRanchOrWilds { get; set; }
+    /// <summary>Where lucky slimes' coins go (the world's owner sets it; without one, coins are only counted).</summary>
+    public Wallet? Wallet { get; set; }
+    /// <summary>
+    /// Ash (ash troughs, <c>AshSource</c>/<c>AshSafetyZone</c>) and water (<c>LiquidSource</c>) that fire and
+    /// puddle slimes feed on and stay alive in. The world's owners add them; the slime zoo adds its own.
+    /// </summary>
+    public List<FeedingPatch> Patches { get; } = [];
+
+    /// <summary>The item id a prefab's <c>Identifiable</c> names (null when it has none).</summary>
+    public string? ItemIdOf(ItemPrefab? prefab) =>
+        prefab?.RootScript("Identifiable")?["id"] is { } id ? Scripts.IdentifiableIds.NameOf(Convert.ToInt64(id)) : null;
 
     /// <summary>Raised for every explosion (boom slimes, boom gordos, feral stomps).</summary>
     public event Action<Explosions.Result>? Exploded;

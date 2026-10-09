@@ -34,7 +34,7 @@ public static class RadSlime
     public const float ExpandingSeconds = 3f, ExpandedSeconds = 10f;
     /// <summary>The aura's size while swelling or swollen, times its normal size.</summary>
     public const float ExpandFactor = 1.5f;
-    /// <summary>Growing toward a bigger size takes this long per unit of scale; shrinking (or anything below normal) takes <see cref="ShrinkSeconds"/>.</summary>
+    /// <summary>Between normal and swollen the aura changes 1/3 of its size per second; anything below normal size (calmed by water) changes 5 per second.</summary>
     public const float GrowSeconds = 3f, ShrinkSeconds = 0.2f;
     public const float Relevancy = 1f;
 

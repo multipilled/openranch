@@ -14,6 +14,8 @@ namespace OpenRanch.Game.Slimes;
 public abstract class SlimeBehaviour
 {
     public SlimeActor Slime { get; private set; } = null!;
+    /// <summary>Where its component sits on the prefab: in a tie of relevancy the earlier one wins.</summary>
+    public int Order { get; internal set; } = int.MaxValue;
     protected ItemCatalog Catalog => Slime.Catalog;
 
     internal void Attach(SlimeActor slime)

@@ -64,6 +64,7 @@ public partial class SlimeZoo : Node3D
             ? args[j + 1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToHashSet(StringComparer.OrdinalIgnoreCase)
             : null;
         _m2.Catalog.Player = player;
+        _m2.Catalog.Wallet ??= _m2.Wallet;
     }
 
     public ItemCatalog Catalog => _m2.Catalog;
