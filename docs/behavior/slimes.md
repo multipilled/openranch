@@ -1,7 +1,8 @@
 # Slimes: hunger, eating and plorts
 
-How an ordinary slime (Pink, Tabby, Rock and the like) decides to eat and what it makes. Largos,
-tarrs, gordos and feral slimes are only touched on at the end.
+How an ordinary slime (Pink, Tabby, Rock and the like) decides to eat and what it makes. Largos and
+tarrs are in `largos.md`, species traits in `slime-traits.md`; gordos and feral slimes are only
+touched on at the end.
 
 Code: `src/OpenRanch.Simulation/Slime.cs`, `SlimeSpecies.cs`, `Items.cs`. Data readers:
 `src/OpenRanch.Formats/Game/SlimeData.cs`.
@@ -60,11 +61,13 @@ A diet's `MajorFoodGroups` name groups of items:
 - **Fruit**, **Veggies**, **Meat**: every item of that kind.
 - **Ginger**: only the ginger veggie.
 - **Plorts**: every plort except the puddle, gold and fire plorts.
-- **Slimes** (`NONTARRGOLD_SLIMES`): every slime except tarrs (the tarr and glitch tarr), the gold
-  slime and the lucky slime.
+- **Slimes** (`NONTARRGOLD_SLIMES`): every slime and every largo except tarrs (the tarr and glitch
+  tarr), the gold slime and the lucky slime. (The game's "is a slime" test counts largos.)
 
 A slime eats the union of its food groups and its additional foods. The exceptions above are
-code-only, so they are kept as named constants in `Items.cs`.
+code-only, so they are kept as named constants in `Items.cs`. The game builds one eat rule per food
+and product, so a diet with no products (fire, glitch, puddle and quicksilver slimes) eats nothing
+this way, and a product of "nothing" (the lucky slime) means it eats and makes nothing.
 
 ## Hunger
 
@@ -195,10 +198,6 @@ openranch reads it but doesn't remove old plorts yet.
 
 ## Not modelled yet
 
-- **Largos**: a slime that can become a largo (`CanLargofy`) also eats other slimes' plorts, which
-  are wanted whenever it is at least a little agitated (a floor of 0.5), and turns it into the largo
-  of the two plort types instead of producing anything. A largo that eats a third plort type becomes
-  a tarr.
 - Feral slimes eat whatever touches them regardless of hunger.
 - Toys, music boxes and nearby pollen change how fast agitation settles; mods (game-mode cheats)
   scale hunger speed.

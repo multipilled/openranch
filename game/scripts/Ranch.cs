@@ -25,6 +25,7 @@ namespace OpenRanch.Game;
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
+///   --slime-zoo [--zoo-focus ID]    every slime and largo in pens with its food; a check unless --screenshot (Slimes/SlimeZoo.cs)
 ///   --hour H, --day-speed X, --day-check   the world clock, see World/WorldTime.cs
 /// </summary>
 public partial class Ranch : Node3D
@@ -102,11 +103,15 @@ public partial class Ranch : Node3D
 
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
         // With a save, its money and corral slimes take the place of the demo slimes.
-        var m2Args = saved is null ? args : args.Append("--no-slimes").ToArray();
+        // Milestone 5's slime zoo (Slimes/SlimeZoo.cs) replaces the demo slimes too.
+        var zoo = Array.IndexOf(args, "--slime-zoo") >= 0;
+        var m2Args = saved is null && !zoo ? args : args.Append("--no-slimes").ToArray();
         var m2 = Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args);
         if (m2 is not null)
         {
             AddChild(m2);
+            if (zoo)
+                AddChild(new Slimes.SlimeZoo(m2, player, args));
             saved?.Populate(m2);
             // Milestone 3: the live ranch saves back to openranch's own format (SaveLoad/SaveWriter.cs).
             if (saved is not null)

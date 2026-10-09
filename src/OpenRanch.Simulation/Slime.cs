@@ -87,9 +87,11 @@ public sealed class Slime
 
     /// <summary>
     /// Feeds the slime. Returns <see cref="Meal.None"/> if it won't eat that now; otherwise the items
-    /// it produces after <see cref="DigestSeconds"/>.
+    /// it produces after <see cref="DigestSeconds"/>. <paramref name="swallowed"/> is false when the bite
+    /// only hurt the food (a slime with health left, bitten by a tarr): the bite still counts for hunger
+    /// and agitation, but nothing comes out (static analysis of SlimeEat).
     /// </summary>
-    public Meal Feed(string food)
+    public Meal Feed(string food, bool swallowed = true)
     {
         if (!WillEat(food))
             return Meal.None;
@@ -107,6 +109,8 @@ public sealed class Slime
         }
         if (effect.Becomes is { } becomes)
             return new Meal(food, [], false, becomes);
+        if (!swallowed)
+            return new Meal(food, [], effect.IsFavorite);
 
         // Each product is its own rule, so each may be skipped on its own.
         var skip = Species.Eating.ChanceToSkipProduce;

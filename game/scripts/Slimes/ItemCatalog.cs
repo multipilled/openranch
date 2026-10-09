@@ -28,6 +28,7 @@ public sealed class ItemCatalog
         Actors = actors;
         World = new WorldAssets(scripts.Assets);
         ItemIds = scripts.IdentifiableIds.Values.Keys.ToList();
+        Largos = new Largos(slimes);
         FixedTimestep = GameTimeData.FixedTimestep(scripts.Assets);
     }
 
@@ -43,6 +44,8 @@ public sealed class ItemCatalog
     public GameClock Clock { get; }
     public WorldAssets World { get; }
     public IReadOnlyList<string> ItemIds { get; }
+    /// <summary>Which largo two plorts make (docs/behavior/largos.md).</summary>
+    public Largos Largos { get; }
     /// <summary>The node every item lives under.</summary>
     public Node3D Actors { get; }
 
@@ -52,13 +55,13 @@ public sealed class ItemCatalog
     /// <summary>The items in the world that haven't been taken out of the game.</summary>
     public IEnumerable<Actor> Live => Actors.GetChildren().OfType<Actor>().Where(a => !a.Consumed && GodotObject.IsInstanceValid(a));
 
-    /// <summary>The slime species for an id, or null when it isn't a slime with eating settings.</summary>
+    /// <summary>The slime species for an id (a slime or a largo), or null when it isn't a slime with eating settings.</summary>
     public SlimeSpecies? Species(string id)
     {
         if (!_species.TryGetValue(id, out var species))
         {
-            species = Items.KindOf(id) == ItemKind.Slime && Slimes.TryGet(id, out var info) && info.Eating is not null
-                ? SlimeSpecies.From(info, ItemIds)
+            species = Items.IsSlime(id) && Slimes.TryGet(id, out var info) && info.Eating is not null
+                ? SlimeSpecies.From(info, ItemIds, Largos)
                 : null;
             _species[id] = species;
         }
