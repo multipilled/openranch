@@ -29,6 +29,9 @@ public static class Program
                                            Nothing is played.
           text [--lang en] [--key KEY] [--bundle NAME] [--game DIR]
                                            Read the game's text in every language; --key shows one message
+          ui [FILE] [--root NAME] [--depth N] [--fields] [--game DIR]
+                                           Print the uGUI hierarchies of a data file (level2 = main menu,
+                                           level3 = world and HUD) with rects and UI components
 
         The game is found through OPENRANCH_GAME_DIR or your Steam libraries.
         Saves default to %USERPROFILE%\AppData\LocalLow\Monomi Park\Slime Rancher.
@@ -48,6 +51,7 @@ public static class Program
                 "scripts" => Scripts(args[1..]),
                 "sounds" => Sounds(args[1..]),
                 "text" => Text(args[1..]),
+                "ui" => UiCommand.Run(args[1..], RequireInstall(args[1..])),
                 _ => PrintUsage(),
             };
         }
