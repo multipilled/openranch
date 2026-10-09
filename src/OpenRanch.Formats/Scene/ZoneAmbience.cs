@@ -47,6 +47,32 @@ public sealed record ZoneAmbience(
         return result;
     }
 
+    /// <summary>
+    /// Settings part way from <paramref name="a"/> to <paramref name="b"/>, each value in a straight line, as the
+    /// ambience director moves between zones (static analysis: AmbianceDirector.AdjustZoneSettings).
+    /// </summary>
+    public static ZoneAmbience Lerp(ZoneAmbience a, ZoneAmbience b, float t) => new(b.Zone,
+        Vector4.Lerp(a.DayFogColor, b.DayFogColor, t), a.DayFogDensity + (b.DayFogDensity - a.DayFogDensity) * t,
+        Vector4.Lerp(a.DayAmbient, b.DayAmbient, t),
+        Vector4.Lerp(a.NightFogColor, b.NightFogColor, t), a.NightFogDensity + (b.NightFogDensity - a.NightFogDensity) * t,
+        Vector4.Lerp(a.NightAmbient, b.NightAmbient, t),
+        Vector4.Lerp(a.DaySky, b.DaySky, t), Vector4.Lerp(a.DayHorizon, b.DayHorizon, t),
+        Vector4.Lerp(a.NightSky, b.NightSky, t), Vector4.Lerp(a.NightHorizon, b.NightHorizon, t));
+
+    /// <summary>
+    /// The ambience zone at a point outside caves: the highest zone named by any cell whose box holds it,
+    /// DEFAULT where none does (static analysis: AmbianceDirector.UpdateZoneSetting). Zones without settings
+    /// (<paramref name="known"/> false) are passed over.
+    /// </summary>
+    public static int ZoneAt(IEnumerable<CellArea> cells, Vector3 unityPoint, Func<int, bool> known)
+    {
+        var zone = DefaultZone;
+        foreach (var cell in cells)
+            if (cell.AmbianceZone > zone && known(cell.AmbianceZone) && cell.Contains(unityPoint))
+                zone = cell.AmbianceZone;
+        return zone;
+    }
+
     /// <summary>The blended values at an hour of the day (0 to 24).</summary>
     public AmbienceAt At(float hour)
     {

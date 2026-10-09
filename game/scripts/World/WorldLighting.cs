@@ -39,12 +39,19 @@ public partial class WorldLighting : Node
     private Camera3D? _camera;
     private float _caveDarkness;
     private int _caveZone = -1;
+    // The world cells and the zone settings outside caves: the cells' zone at the camera, reached from the
+    // settings it last showed over TransitionSeconds (docs/behavior/zones.md).
+    private readonly IReadOnlyList<CellArea> _cells;
+    private int _outsideZone = ZoneAmbience.DefaultZone;
+    private ZoneAmbience? _outsideFrom;
+    private float _outsideBlend = 1;
 
     public WorldLighting(SceneLighting scene, IReadOnlyList<ZoneAmbience> zones, IReadOnlyList<CaveVolume> caves,
-        IReadOnlyList<LightItem> lights, float hour, IReadOnlyList<TimeOfDayLight>? rigLights = null)
+        IReadOnlyList<LightItem> lights, float hour, IReadOnlyList<TimeOfDayLight>? rigLights = null, IReadOnlyList<CellArea>? cells = null)
     {
         Name = "Lighting";
         _scene = scene;
+        _cells = cells ?? [];
         _zones = zones.GroupBy(z => z.Zone).ToDictionary(g => g.Key, g => g.First());
         _caves = caves;
         _hour = hour;
@@ -142,6 +149,8 @@ public partial class WorldLighting : Node
                 _caveAmount[cave.Path] = 1;
         _caveZone = CaveZoneAt(camera.GlobalPosition);
         _caveDarkness = _caveZone >= 0 ? 1 : 0;
+        _outsideZone = OutsideZoneAt(camera.GlobalPosition);
+        _outsideBlend = 1;
         Apply();
     }
 
@@ -162,6 +171,20 @@ public partial class WorldLighting : Node
                 _caveAmount[cave.Key] = next;
                 changed = true;
             }
+        }
+
+        var outsideZone = OutsideZoneAt(_camera.GlobalPosition);
+        if (outsideZone != _outsideZone)
+        {
+            _outsideFrom = OutsideSettings();
+            _outsideZone = outsideZone;
+            _outsideBlend = Math.Min(1, step);
+            changed = true;
+        }
+        else if (_outsideBlend < 1)
+        {
+            _outsideBlend = Math.Min(1, _outsideBlend + step);
+            changed = true;
         }
 
         var zone = CaveZoneAt(_camera.GlobalPosition);
@@ -213,9 +236,23 @@ public partial class WorldLighting : Node
 
     private AmbienceAt? Ambience(int zone) => _zones.TryGetValue(zone, out var z) ? z.At(_hour) : null;
 
+    /// <summary>The ambience zone the cells give at a point outside caves (0, DEFAULT, where none does).</summary>
+    public int OutsideZoneAt(Vector3 godotPosition) => ZoneAmbience.ZoneAt(_cells, UnityPosition(godotPosition), _zones.ContainsKey);
+
+    /// <summary>The zone whose settings show outside caves now.</summary>
+    public int OutsideZone => _outsideZone;
+
+    // The outside settings now: the current zone's, or part way to them from where the last change started.
+    private ZoneAmbience? OutsideSettings()
+    {
+        if (!_zones.TryGetValue(_outsideZone, out var target))
+            return null;
+        return _outsideFrom is { } from && _outsideBlend < 1 ? ZoneAmbience.Lerp(from, target, _outsideBlend) : target;
+    }
+
     private void Apply()
     {
-        var outside = Ambience(ZoneAmbience.DefaultZone);
+        var outside = OutsideSettings()?.At(_hour);
         var cave = _caveZone >= 0 ? Ambience(_caveZone) : null;
         var t = cave is null ? 0 : _caveDarkness;
         N.Vector4 Mix(N.Vector4 a, N.Vector4? b) => b is { } v ? N.Vector4.Lerp(a, v, t) : a;

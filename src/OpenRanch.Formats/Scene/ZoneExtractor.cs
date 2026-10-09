@@ -43,11 +43,47 @@ public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Ho
 /// <summary>
 /// One area's renderers, solid colliders, cave volumes and lamps. <see cref="Timed"/> holds what belongs
 /// to objects tied to the time of day, kept out of the other lists (only with <see cref="WorldState.RunningClock"/>).
+/// <see cref="Cells"/>, <see cref="Teleports"/> and <see cref="KillVolumes"/> are described in docs/behavior/zones.md.
 /// </summary>
 public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats,
-    IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights, IReadOnlyList<TimedGroup>? Timed = null)
+    IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights, IReadOnlyList<TimedGroup>? Timed = null,
+    IReadOnlyList<CellArea>? CellAreas = null, IReadOnlyList<TeleportPoint>? TeleportPoints = null, IReadOnlyList<TriggerVolume>? Kills = null)
 {
     public IReadOnlyList<TimedGroup> TimedGroups => Timed ?? [];
+    public IReadOnlyList<CellArea> Cells => CellAreas ?? [];
+    public IReadOnlyList<TeleportPoint> Teleports => TeleportPoints ?? [];
+    public IReadOnlyList<TriggerVolume> KillVolumes => Kills ?? [];
+}
+
+/// <summary>
+/// A world cell: its region's box in world space (a <c>Region</c> script's <c>bounds</c>) and the ambience
+/// zone its <c>CellDirector</c> names (AmbianceDirector.Zone: 0 DEFAULT, 1 QUARRY, 2 MOSS, 3 DESERT, 4 RUINS,
+/// 5 WILDS, ...). The player is in every cell whose box holds its position (Unity's Bounds.Contains, edges included).
+/// </summary>
+public sealed record CellArea(string Path, int AmbianceZone, Vector3 Center, Vector3 Extent)
+{
+    public bool Contains(Vector3 point)
+    {
+        var d = Vector3.Abs(point - Center);
+        return d.X <= Extent.X && d.Y <= Extent.Y && d.Z <= Extent.Z;
+    }
+}
+
+/// <summary>
+/// A place the game teleports the player to: a <c>TeleportDestination</c> (the player lands on the object's
+/// position and, with <see cref="Reorient"/>, takes its rotation) or a <c>DebugTeleportDestination</c>, the
+/// developers' named start point for a zone (<see cref="IsDebugStart"/>).
+/// </summary>
+public sealed record TeleportPoint(string Name, string Path, Matrix4x4 World, bool Reorient, bool IsDebugStart);
+
+/// <summary>
+/// A trigger volume, such as a <c>KillOnTrigger</c> under a sea, in the same terms as <see cref="CaveVolume"/>.
+/// Triggers only meet bodies on layers that collide with theirs (<see cref="Layer"/>).
+/// </summary>
+public sealed record TriggerVolume(string Path, Matrix4x4 World, ColliderShape Shape, Vector3 LocalMin, Vector3 LocalMax, float Radius, uint Layer)
+{
+    public bool Contains(Vector3 point) =>
+        new CaveVolume(Path, World, Shape, LocalMin, LocalMax, Radius, 0, false, []).Contains(point);
 }
 
 /// <summary>
@@ -113,6 +149,9 @@ public static class ZoneExtractor
         var colliders = new List<ColliderItem>();
         var caves = new List<CaveVolume>();
         var lights = new List<LightItem>();
+        var cells = new List<CellArea>();
+        var teleports = new List<TeleportPoint>();
+        var killVolumes = new List<TriggerVolume>();
         var lowerLods = new HashSet<long>();
         var hiddenObjects = new HashSet<long>(state.Hidden ?? new HashSet<long>());
         // Objects tied to the time of day, with their windows, by game object id (only with a running clock).
@@ -173,19 +212,45 @@ public static class ZoneExtractor
             MeshFilterData? filter = null;
             CaveSettingsData? cave = null;
             long? caveLightController = null;
+            int? ambianceZone = null;
+            (Vector3 Center, Vector3 Extent)? regionBounds = null;
+            var kills = false;
             foreach (var c in go.Components)
             {
                 if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MeshFilter } f)
                     filter = assets.Read(f, MeshFilterData.Read);
                 else if (assets.Resolve(scene, c) is { ClassId: UnityClassId.MonoBehaviour } script)
                 {
-                    var name = ScriptName(assets, script);
-                    if (name == "CaveTrigger")
-                        cave ??= CaveSettings(assets, script);
-                    else if (name == "CaveLightController")
-                        caveLightController = script.PathId;
+                    switch (ScriptName(assets, script))
+                    {
+                        case "CaveTrigger":
+                            cave ??= CaveSettings(assets, script);
+                            break;
+                        case "CaveLightController":
+                            caveLightController = script.PathId;
+                            break;
+                        // The Slimeulations' cells use a subclass; its own fields come after CellDirector's.
+                        case "CellDirector" or "GlitchCellDirector":
+                            ambianceZone = CellAmbianceZone(assets, script);
+                            break;
+                        case "Region":
+                            regionBounds = RegionBounds(assets, script);
+                            break;
+                        case "KillOnTrigger":
+                            kills = true;
+                            break;
+                        case "TeleportDestination":
+                            teleports.Add(TeleportDestination(assets, script, path, world));
+                            break;
+                        case "DebugTeleportDestination":
+                            teleports.Add(new TeleportPoint(DebugTeleportName(assets, script), path, world, true, true));
+                            break;
+                    }
                 }
             }
+            // The Region script finds its CellDirector on the same object (static analysis: Region.Awake).
+            if (ambianceZone is { } az && regionBounds is { } rb)
+                cells.Add(new CellArea(path, az, rb.Center, rb.Extent));
 
             foreach (var c in go.Components)
             {
@@ -225,6 +290,8 @@ public static class ZoneExtractor
                             if (cave is { } cs && CaveBounds(assets, scene, col) is { } bounds)
                                 caves.Add(new CaveVolume(path, world, col.Shape, bounds.Min, bounds.Max, col.Radius, cs.Zone, cs.AffectsLighting,
                                     cs.Lights));
+                            if (kills && CaveBounds(assets, scene, col) is { } killBounds)
+                                killVolumes.Add(new TriggerVolume(path, world, col.Shape, killBounds.Min, killBounds.Max, col.Radius, go.Layer));
                             continue;
                         }
                         var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
@@ -243,7 +310,49 @@ public static class ZoneExtractor
         Walk(root, Matrix4x4.Identity, "", []);
 
         return new ZoneExtract(rootName, renderers, colliders,
-            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights, timed.Values.ToList());
+            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights, timed.Values.ToList(),
+            cells, teleports, killVolumes);
+    }
+
+    // CellDirector's serialized fields up to its ambience zone (from the game's managed metadata): eight
+    // int32 spawn limits, two floats (despawnFactor, avgSpawnTimeGameHours), three bools padded to 4
+    // (isRanch, isHomeRanch, isWilds), then ambianceZone (AmbianceDirector.Zone).
+    private static int CellAmbianceZone(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        r.Skip(8 * 4 + 2 * 4 + 3 * 4);
+        return r.ReadInt32();
+    }
+
+    // Region: overrideBounds (bool, padded to 4), then bounds (centre, extent), already in world space:
+    // the game registers them as stored (static analysis: Region.OnEnable, RegionRegistry.RegisterRegion).
+    private static (Vector3 Center, Vector3 Extent) RegionBounds(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        r.Skip(4);
+        return (r.ReadVector3(), r.ReadVector3());
+    }
+
+    // TeleportDestination: destLoc and arriveFX references, teleportDestinationName, reorient. The game moves
+    // the player to the object's own position and, with reorient set, its rotation (static analysis:
+    // TeleportNetwork, TeleportDestination.GetPosition/GetEulerAngles).
+    private static TeleportPoint TeleportDestination(AssetSet assets, AssetRef behaviour, string path, Matrix4x4 world)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        r.Skip(12 + 12);
+        var name = r.ReadAlignedString();
+        return new TeleportPoint(name, path, world, r.ReadBool(), false);
+    }
+
+    // DebugTeleportDestination: one string, the name the game's debug menu shows (e.g. "Wilds Start").
+    private static string DebugTeleportName(AssetSet assets, AssetRef behaviour)
+    {
+        var r = assets.Reader(behaviour);
+        Unity.Managed.MonoBehaviourReader.ReadHeader(r);
+        return r.ReadAlignedString();
     }
 
     private sealed record CaveSettingsData(int Zone, bool AffectsLighting, IReadOnlyList<long> Lights);
