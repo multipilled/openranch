@@ -52,6 +52,8 @@ power loss). On main: `--m3-check` PASS (Game2_4, Logansfarm_5 x3), `--world-che
 **ON HOLD (Control, 2026-10-09):** the user moved weekly usage to WWE. Running workers (integration, M7 menus/HUD, M8 sound)
 finish their current step, commit and stop. Start nothing new until Control or the user resumes SR (at the latest after the
 weekly reset, Thu Oct 15, 3 PM ET). On resume: merge what the three committed, then continue them from their branches.
+Approved for resume: m7-ui changes Ranch._Ready's `var args = OS.GetCmdlineUserArgs();` to
+`var args = UI.GameLaunch.Args ?? OS.GetCmdlineUserArgs();` (menu start through the existing entry point); integ also edits Ranch.cs.
 
 Stale folders: D:\Projects\openranch-m3load and openranch-faces are empty but held open (their old
 sessions); delete once those sessions are archived.
