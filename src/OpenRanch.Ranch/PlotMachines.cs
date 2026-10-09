@@ -132,8 +132,20 @@ public sealed record AshRules(float AshPerItem, float MaxAsh)
         trough && Items.KindOf(itemId) is ItemKind.Veggie or ItemKind.Fruit or ItemKind.Meat or ItemKind.Tofu ? Math.Min(ash + AshPerItem, MaxAsh) : ash;
 }
 
-/// <summary>A silo catcher of a plot (<c>SiloCatcher</c>): the trigger it catches in, the store it fills and the slot it fills (<c>slotIdx</c>).</summary>
-public sealed record CatcherPart(PrefabTrigger Trigger, StoreRules Store, int Slot);
+/// <summary>
+/// A silo catcher of a plot (<c>SiloCatcher</c>): the trigger it catches in, the store and slot it fills
+/// (<c>slotIdx</c>) and its <c>type</c> (<c>SiloCatcher.Type</c> name): every type but output-only takes
+/// items in; the silo types give them out to a vacpack pulling at them.
+/// </summary>
+public sealed record CatcherPart(PrefabTrigger Trigger, StoreRules Store, int Slot, string Type = "SILO_DEFAULT")
+{
+    public bool Input => Type != "SILO_OUTPUT_ONLY";
+    public bool Output => Type is "SILO_DEFAULT" or "SILO_OUTPUT_ONLY";
+    /// <summary>Real seconds between items given out (<c>SiloCatcher</c>'s 0.25, before its speed-up).</summary>
+    public const float OutputSeconds = 0.25f;
+    /// <summary>The widest angle from the catcher's front a vacpack can pull from (<c>SiloCatcher</c>'s 45 degrees).</summary>
+    public const float OutputAngleDegrees = 45f;
+}
 
 /// <summary>
 /// The machines of each plot type, read from the plot prefabs (<see cref="PlotLayout.Prefabs"/>): the
@@ -176,8 +188,8 @@ public sealed class PlotMachineData
             StoreRules? StoreAbove(long obj) => tree.ChainOf(obj).Reverse().Select(o => storeByObject.GetValueOrDefault(o)).FirstOrDefault(s => s is not null);
             var catchers = tree.Scripts.Where(s => s.Class == "SiloCatcher")
                 .SelectMany(s => tree.Triggers.Where(t => t.Region.Class == "SiloCatcher" && t.Object == s.Object)
-                    .Select(t => (t, store: StoreAbove(s.Object), slot: Convert.ToInt32(s.Data["slotIdx"]))))
-                .Where(c => c.store is not null).Select(c => new CatcherPart(c.t, c.store!, c.slot)).ToList();
+                    .Select(t => (t, store: StoreAbove(s.Object), slot: Convert.ToInt32(s.Data["slotIdx"]), kind: names.Name("SiloCatcher.Type", Convert.ToInt64(s.Data["type"])))))
+                .Where(c => c.store is not null).Select(c => new CatcherPart(c.t, c.store!, c.slot, c.kind)).ToList();
             if (catchers.Count > 0)
                 data.Catchers[type] = catchers;
             if (tree.Script("SlimeFeeder") is { } feeder)

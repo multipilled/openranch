@@ -75,7 +75,7 @@ public partial class RanchMachines : Node
         var type = site.Placed.Plot.Type;
         var id = site.Info.Id;
         foreach (var catcher in Data.Catchers.GetValueOrDefault(type) ?? [])
-            if (tree.IsOn(catcher.Trigger.Chain, site.Placed.Upgrades.Switched))
+            if (catcher.Input && tree.IsOn(catcher.Trigger.Chain, site.Placed.Upgrades.Switched))
                 site.Node.AddChild(Area(site, catcher.Trigger, "SiloCatcher", body => Catch(id, catcher, body)));
         foreach (var fire in tree.Triggers.Where(t => t.Region.Class == "Incinerate" && tree.IsOn(t.Chain, site.Placed.Upgrades.Switched)))
             site.Node.AddChild(Area(site, fire, "Incinerate", body => Burn(id, body)));
@@ -136,7 +136,41 @@ public partial class RanchMachines : Node
                 Feed(site, feeder, feederScript, now);
             if (Data.Collectors.TryGetValue(plot.Type, out var collector) && ScriptOn(site, "PlortCollector") is not null)
                 Collect(site, collector.Rules, collector.Area, now);
+            if (_economy.M2.Tool.VacHeld && Data.Catchers.TryGetValue(plot.Type, out var catchers))
+                foreach (var catcher in catchers.Where(c => c.Output))
+                    GiveOut(site, catcher, now);
         }
+    }
+
+    // SiloCatcher.OnTriggerStay: a vacpack pulling at a catcher's front (within 45 degrees) gets one item
+    // of its slot every quarter second, put 1.2 m out towards the vacpack.
+    private void GiveOut(RanchPlots.Site site, CatcherPart catcher, double now)
+    {
+        if (!site.Placed.Prefab.Tree!.IsOn(catcher.Trigger.Chain, site.Placed.Upgrades.Switched))
+            return;
+        var key = $"{site.Info.Id}/{catcher.Trigger.Object}";
+        var real = Time.GetTicksMsec() / 1000.0;
+        if (real < _nextEject.GetValueOrDefault(key))
+            return;
+        var world = catcher.Trigger.Region.ToRoot * site.Info.PlotWorld;
+        var at = UnityConvert.Position(N.Vector3.Transform(catcher.Trigger.Region.Center, world));
+        var tool = _economy.M2.Tool;
+        if (!tool.InCone(at))
+            return;
+        var forward = UnityConvert.Position(N.Vector3.Normalize(N.Vector3.TransformNormal(N.Vector3.UnitZ, world)));
+        var toward = (tool.GlobalPosition - at).Normalized();
+        if (Mathf.RadToDeg(forward.AngleTo(toward)) > CatcherPart.OutputAngleDegrees)
+            return;
+        var plot = site.Placed.Plot;
+        if (StoreRules.TakeOne(Slots(plot, catcher.Store), catcher.Slot) is not { } item)
+            return;
+        var name = _economy.Names.Name(GameEnum.ItemId, item);
+        if (_economy.M2.Catalog.Prefabs.Has(name))
+        {
+            _economy.M2.Catalog.Spawn(name, at + toward * 1.2f);
+            Log.Add((site.Info.Id, "gave", name, now));
+        }
+        _nextEject[key] = real + CatcherPart.OutputSeconds;
     }
 
     // SlimeFeeder.Update: cycles queue drops; one drop every half second from the first slot of the feeder's store.

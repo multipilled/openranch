@@ -132,6 +132,27 @@ public sealed class MachinesCheck(M6Check check, Economy economy)
         check.Check(thrown && slots?[catchers[0].Slot].Count == 1,
             $"a silo on {site.Info.Id} ({catchers.Count} catchers on, {string.Join(", ", Machines.Data.Stores[site.Placed.Plot.Type].Select(s => $"{s.KindName} {s.Slots}x{s.MaxPerSlot}"))}) " +
             $"took a carrot into slot {catchers.FirstOrDefault()?.Slot}");
+        if (!thrown)
+            return;
+
+        // The vacpack pulling at the catcher's front gets the carrot back out.
+        var catcher = catchers[0];
+        var world = catcher.Trigger.Region.ToRoot * site.Info.PlotWorld;
+        var center = UnityConvert.Position(N.Vector3.Transform(catcher.Trigger.Region.Center, world));
+        var forward = UnityConvert.Position(N.Vector3.Normalize(N.Vector3.TransformNormal(N.Vector3.UnitZ, world)));
+        var tool = economy.M2.Tool;
+        var area = site.Node!.GetChildren().OfType<Area3D>().FirstOrDefault(a => a.Name.ToString().StartsWith("SiloCatcher", StringComparison.Ordinal));
+        var aimed = area is not null && await check.Aim(area, () => tool.InCone(center)
+            && Mathf.RadToDeg(forward.AngleTo((tool.GlobalPosition - center).Normalized())) <= CatcherPart.OutputAngleDegrees);
+        var gaveBefore = Machines.Log.Count(l => l.What == "gave");
+        tool.ScriptControlled = true;
+        tool.VacHeld = true;
+        var gave = aimed && await check.Until(() => Machines.Log.Count(l => l.What == "gave") > gaveBefore, 5);
+        await check.Seconds(1);
+        tool.VacHeld = false;
+        tool.ScriptControlled = false;
+        check.Check(gave && slots![catcher.Slot].Count == 0,
+            $"the vacpack pulling at the silo's front (aimed {aimed}) got the carrot back out; slot {catcher.Slot} holds {slots?[catcher.Slot].Count}");
     }
 
     private async Task Incinerator(string? avoid)
