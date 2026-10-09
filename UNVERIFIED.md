@@ -32,8 +32,13 @@ before other work relies on it.
 | In-game save key and folder | F5 writes `user://saves/<game>.ranch.json` | the original saves when sleeping; decide the save flow (M7) | m3 |
 | Timers of actors created in play (plort `destroyTime`, transform/reproduce times) | written as 0 (the record default) | model plort expiry and slime timers | m3 |
 | Fear of slimes created in play | not written; loaded slimes keep their saved fear | model fear | m3 |
-| Matching spawned actors to the save | same type at the same spot within 1 cm in the first second | the loader hands over save ids (m3-plots) | m3 |
 | HUD clock readout | "Day N, HH:MM" top right, openranch's own | the original's HUD clock | day cycle |
 | Several time-window scripts on one object | shown only while all windows are open | the original's last-script-wins order (doesn't occur on The Ranch) | day cycle |
 | Sky day/night blend | Godot gradient between blended horizon and sky colours | the original's sky shader blend values | day cycle |
 | Which day/night lights cast shadows | all directional lights, 150 m | the Light component's shadow setting | day cycle |
+| Produce re-attaching to crops | only crops inside the zone; one just outside within 10 m is ignored | the original's attach search | m3 |
+| Ripe produce let go by the vacpack | drops straight down; the release kick and spin are skipped | the crop joint's release code | m3 |
+| Unripe produce size | a third of full size, collision shapes shrunk the same | the original's growth scale | m3 |
+| Rotten produce look | looks like normal produce | the rot material switch | m3 |
+| Deluxe coop | its regions are not made deluxe | the deluxe coop's behaviour | m3 |
+| `--m3-check` floor test | things 1.5-3 m above a plot's middle count as clear | (check only, not game behaviour) | m3 |
