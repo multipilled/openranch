@@ -34,6 +34,16 @@ Checked: both values read from the install by `DayLength.Read`; the install test
 sleeping value in the install differs from the script's built-in default, so it must be read, not
 assumed. The pausing rules come from static analysis of the time director.
 
+In the install a game day lasts 1,440 real seconds (24 minutes), so a game minute passes every real
+second; sleeping runs at 4 real seconds per game day.
+
+openranch runs the clock in The Ranch with `game/scripts/World/WorldTime.cs`: it moves the ranch's world
+time (the save's, or a new game's 9:00 on day 1) with `DayCycle` every frame, stops while the game is
+paused, and shows "Day N, HH:MM" at the top right (openranch's own readout; the original's HUD clock is
+not drawn yet). Testing options: `--hour H` starts at hour H of the starting day, `--day-speed X` runs
+the clock X times faster, and `--day-check` checks the start time, the pace (normal and 60 times faster),
+the lighting at four hours and the timed objects, then quits.
+
 ## Parts of the day
 
 The clock's icon splits the day into four parts (code-only, from static analysis of the time

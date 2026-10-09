@@ -72,6 +72,42 @@ save summary's own copies (save time, save counter, game-over flag). Saves from 
 (versions 8 and 9) can't be read yet; loading such a ranch in the original and saving it upgrades
 it to version 12.
 
+## Saving the live ranch
+
+openranch saves a ranch it is running in its own format only (`.ranch.json`,
+[openranch-saves.md](../formats/openranch-saves.md)), never as the original's `.sav` and never into
+the original's save folder. `RanchWriter.Merge` (src/OpenRanch.Ranch/RanchWriter.cs) starts from the
+ranch as it was loaded and lays over it what the running world changed; the game's side is
+`game/scripts/SaveLoad/SaveWriter.cs`.
+
+- **From the world:** money on hand (money earned in play is also added to the money earned over
+  the game), the world time (the loaded time plus the game hours the clock has run since), and every
+  actor the world holds: position, rotation, type, and for slimes hunger and agitation.
+- **Actors.** A saved actor the world took in is written where it is now, in its saved place in the
+  list; one that left the game (eaten, sold, sucked up) is dropped. Saved actors the world never took
+  in (outside the corrals, or with no prefab yet) are written as saved. An actor that appeared in play
+  gets the next free id, the way the original numbers them: dynamic ids start at 100 and loading an
+  actor moves the next id past it (static analysis of the original's actor registry). Its region set
+  is the player's, and the timers the world doesn't model stay 0, the value the original's actor
+  record starts with before each kind fills its own members.
+- **Moods.** Only hunger and agitation are modelled; fear and anything else keep the saved value.
+  The loaded slimes start with their saved hunger and agitation, so a load and save without play
+  keeps them.
+- **Rotation.** Written as the original stores it: Euler angles in degrees from 0 to 360, applied
+  about z, then x, then y, in its left-handed axes (Godot's rotation is mirrored in z first).
+- **Plots, progress and doors** are written as loaded: nothing in the world builds, upgrades or buys
+  yet. The writer takes changes to them (`LiveRanch.Plots`, `Progress`, `AccessDoors`) for when it does.
+- **Everything else passes through** unchanged: the player's position, vacpack, upgrades, mail,
+  Slimepedia, gadgets, the market and the rest of the world.
+
+`--save FILE --save-out OUT` writes OUT once the world has settled (4 s, as `--m3-check`) and quits.
+In play, F5 writes to openranch's user folder (`user://saves/<game name>.ranch.json`); the original
+has no save key (openranch's choice, UNVERIFIED.md).
+
+Until the loader hands over the save's ids, SaveWriter matches each actor the loader puts into the
+world to the saved actor of the same type standing exactly there (within 1 cm, during the first
+second).
+
 ## Checked
 
 - Enum names quoted here (moods, door states, mail types) were read from the install's assembly
@@ -83,5 +119,12 @@ it to version 12.
   slime counts by type. It prints a summary.
 - The same test file imports every version 12 save on the PC, checks money, actor, plot, Slimepedia
   and mail counts against the raw save, and round-trips each through openranch's format.
+- `RanchWriterTests`: a world that changed nothing writes the ranch as loaded, byte for byte; actors
+  are moved, dropped, kept and added with the original's next ids; the written file reads back
+  through `RanchFiles.Read` as the merged ranch; Euler angles match the original's convention.
+- In Godot on `20220508105930_Game2_4`: `--save-out` after 4 s, then `--m3-check` on the written
+  file passes (twice). A second `--save-out` from the written file differs from the first only in
+  the world time and the 17 corral slimes' places and moods; the other 2640 actors and every other
+  member are the same.
 - `SaveImportTests` builds a small save by hand in the original's layout, writes it to bytes, reads
   it back and imports it, checking each field.

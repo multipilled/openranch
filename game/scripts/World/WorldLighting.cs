@@ -8,24 +8,29 @@ using N = System.Numerics;
 namespace OpenRanch.Game.World;
 
 /// <summary>
-/// Sky, ambient light, fog, sun and the scene's own lamps as the original sets them for the zone,
-/// the hour and whether the camera is inside a cave (docs/behavior/day-and-night.md). Falls back to
-/// the scene's stored values when the zone settings can't be read.
+/// Sky, ambient light, fog, sun, night light and the scene's own lamps as the original sets them for
+/// the zone, the hour and whether the camera is inside a cave (docs/behavior/day-and-night.md). Falls
+/// back to the scene's stored values when the zone settings can't be read. The world clock
+/// (<see cref="WorldTime"/>) moves the hour with <see cref="SetHour"/>.
 /// </summary>
 public partial class WorldLighting : Node
 {
     private static readonly Shader FogShader = GD.Load<Shader>("res://shaders/sr_fog.gdshader");
 
-    // How long the lighting takes to change on entering or leaving a cave, in seconds.
-    private const float CaveTransitionSeconds = 1f;
+    /// <summary>
+    /// How long the lighting takes to change on entering or leaving a cave, in seconds. The world clock
+    /// sets it from the install (AmbianceDirector's zoneSettingTransitionTime); 1 until then.
+    /// </summary>
+    public float TransitionSeconds { get; set; } = 1f;
 
     private readonly SceneLighting _scene;
     private readonly IReadOnlyDictionary<int, ZoneAmbience> _zones;
     private readonly IReadOnlyList<CaveVolume> _caves;
-    private readonly float _hour;
+    private float _hour;
     private readonly ProceduralSkyMaterial _sky = new() { SunAngleMax = 0 };
     private readonly Godot.Environment _environment;
-    private readonly DirectionalLight3D _sun;
+    // The sun and the night light: each rig light with its Godot light.
+    private readonly List<(TimeOfDayLight Rig, DirectionalLight3D Light)> _rigLights = new();
     private readonly ShaderMaterial _fog = new() { Shader = FogShader };
     // How far the camera has gone into each cave trigger (0 outside, 1 after a second inside), by trigger.
     private readonly Dictionary<string, float> _caveAmount = new();
@@ -36,7 +41,7 @@ public partial class WorldLighting : Node
     private int _caveZone = -1;
 
     public WorldLighting(SceneLighting scene, IReadOnlyList<ZoneAmbience> zones, IReadOnlyList<CaveVolume> caves,
-        IReadOnlyList<LightItem> lights, float hour)
+        IReadOnlyList<LightItem> lights, float hour, IReadOnlyList<TimeOfDayLight>? rigLights = null)
     {
         Name = "Lighting";
         _scene = scene;
@@ -56,20 +61,44 @@ public partial class WorldLighting : Node
             SsaoIntensity = 1,
         };
         AddChild(new WorldEnvironment { Environment = _environment });
-        _sun = new DirectionalLight3D
+        // Without the rigs, the scene's main day light stands in for the sun.
+        if (rigLights is not { Count: > 0 })
+            rigLights = [new TimeOfDayLight("Light - Main", false, scene.SunRotation, N.Quaternion.Identity,
+                TimeOfDayLight.Directional, scene.SunColor, scene.SunIntensity)];
+        foreach (var rig in rigLights.Where(r => r.Type == TimeOfDayLight.Directional))
         {
-            LightEnergy = 1,
-            SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly,
-            ShadowEnabled = true,
-            DirectionalShadowMaxDistance = 150,
-        };
-        AddChild(_sun);
+            var light = new DirectionalLight3D
+            {
+                Name = rig.IsNight ? "NightLight" : "Sun",
+                LightEnergy = 1,
+                SkyMode = DirectionalLight3D.SkyModeEnum.LightOnly,
+                ShadowEnabled = true,
+                DirectionalShadowMaxDistance = 150,
+            };
+            AddChild(light);
+            _rigLights.Add((rig, light));
+        }
         foreach (var item in lights)
             AddLamp(item);
     }
 
-    // A point or spot light from the scene. Unity's spot angle is the whole cone; Godot's is half of it.
-    private void AddLamp(LightItem item)
+    /// <summary>The hour of the day the lighting shows (0 to 24).</summary>
+    public float Hour => _hour;
+
+    /// <summary>Moves the lighting to another hour of the day (0 to 24).</summary>
+    public void SetHour(float hour)
+    {
+        if (hour == _hour)
+            return;
+        _hour = hour;
+        Apply();
+    }
+
+    /// <summary>
+    /// A point or spot light from the scene, added under <paramref name="parent"/> (this node if null).
+    /// Unity's spot angle is the whole cone; Godot's is half of it.
+    /// </summary>
+    public Light3D AddLamp(LightItem item, Node? parent = null)
     {
         Light3D light = item.Type == 0
             ? new SpotLight3D { SpotRange = item.Range, SpotAngle = Math.Clamp(item.SpotAngle / 2, 1, 89) }
@@ -84,12 +113,13 @@ public partial class WorldLighting : Node
         light.SetParam(Light3D.Param.Attenuation, decay);
         light.LightEnergy = energy;
         light.ShadowEnabled = false;
-        AddChild(light);
+        (parent ?? this).AddChild(light);
         if (item.CaveController is { } controller)
         {
             light.Visible = false;
             _caveLights.Add((light, energy, controller));
         }
+        return light;
     }
 
     /// <summary>Draws the fog from this camera and starts the lighting where the camera is.</summary>
@@ -119,7 +149,7 @@ public partial class WorldLighting : Node
     {
         if (_camera is null)
             return;
-        var step = (float)delta / CaveTransitionSeconds;
+        var step = (float)delta / TransitionSeconds;
         var changed = false;
         var p = UnityPosition(_camera.GlobalPosition);
         foreach (var cave in _caves.GroupBy(c => c.Path))
@@ -146,6 +176,27 @@ public partial class WorldLighting : Node
         if (changed)
             Apply();
     }
+
+    /// <summary>
+    /// A rig light's intensity: its stored intensity times the sun's or night light's strength, less the
+    /// cave darkness, kept between 0.001 and 1 while the rig shines at all (static analysis:
+    /// AmbianceDirector.UpdateLightIntensity).
+    /// </summary>
+    public static float RigIntensity(TimeOfDayLight rig, DayCycle day, float caveDarkness)
+    {
+        var strength = (rig.IsNight ? day.MoonStrength : day.SunStrength) * (1 - caveDarkness);
+        return Math.Clamp(rig.Intensity * strength, strength == 0 ? 0 : 0.001f, 1);
+    }
+
+    /// <summary>What the lighting is set to now, read back from the Godot objects (for --day-check).</summary>
+    public LightingNow Now() => new(
+        _environment.AmbientLightColor,
+        (Color)_fog.GetShaderParameter("fog_color"),
+        (float)_fog.GetShaderParameter("density"),
+        _sky.SkyTopColor,
+        _sky.SkyHorizonColor,
+        _caveDarkness,
+        _rigLights.Select(r => (r.Rig, r.Light.Visible, r.Light.LightColor, r.Light.Basis)).ToList());
 
     private static N.Vector3 UnityPosition(Vector3 godot) => new(godot.X, godot.Y, -godot.Z);
 
@@ -184,14 +235,16 @@ public partial class WorldLighting : Node
         _fog.SetShaderParameter("fog_color", UnityConvert.Color(fogColor) with { A = 1 });
         _fog.SetShaderParameter("density", fogDensity);
 
-        // The sun turns about its own X axis through the day (at noon it points as stored) and is dimmed
-        // inside caves.
-        var day = outside?.Day ?? DayCycle.At(12);
-        var strength = day.SunStrength * (1 - _caveDarkness);
-        _sun.Visible = strength > 0;
-        var turned = _scene.SunRotation * N.Quaternion.CreateFromAxisAngle(N.Vector3.UnitX, day.TurnDegrees * MathF.PI / 180f);
-        _sun.Basis = UnityConvert.Transform(N.Matrix4x4.CreateFromQuaternion(turned)).Basis;
-        _sun.LightColor = UnityConvert.GammaMatchedLight(ambient, _scene.SunColor, _scene.SunIntensity * strength);
+        // The sun and night light rigs turn about their own X axis through the day (at noon they point as
+        // stored); each light shines at its stored intensity times the rig's strength, dimmed inside caves.
+        var day = outside?.Day ?? DayCycle.At(_hour);
+        foreach (var (rig, light) in _rigLights)
+        {
+            var intensity = RigIntensity(rig, day, _caveDarkness);
+            light.Visible = intensity > 0;
+            light.Basis = UnityConvert.Transform(N.Matrix4x4.CreateFromQuaternion(rig.Rotation(day.TurnDegrees))).Basis;
+            light.LightColor = UnityConvert.GammaMatchedLight(ambient, rig.Color, intensity);
+        }
 
         // Cave lamps shine in proportion to how far the camera is into the caves that list them.
         foreach (var (light, energy, controller) in _caveLights)
@@ -203,3 +256,7 @@ public partial class WorldLighting : Node
         }
     }
 }
+
+/// <summary>The lighting's current settings, as <see cref="WorldLighting.Now"/> reads them back.</summary>
+public sealed record LightingNow(Color Ambient, Color FogColor, float FogDensity, Color SkyTop, Color SkyHorizon, float CaveDarkness,
+    IReadOnlyList<(TimeOfDayLight Rig, bool Visible, Color Color, Basis Basis)> Rigs);

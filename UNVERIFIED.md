@@ -29,3 +29,11 @@ before other work relies on it.
 | Daily plort price noise | own smooth noise with the same spread | the original's noise function, or a documented deliberate difference | m2 |
 | Which expansion barriers a save has opened (Lab, Grotto, Overgrowth and the passages between them) | open when every `UNLOCK_<NAME>` progress named in the barrier's cell or object name is > 0; door barriers follow the save's door state | the original's barrier rule (code only) | m3 |
 | Saved slime facing | Godot yaw = -Unity euler Y; pitch and roll ignored | slimes' saved rotation compared in game | m3 |
+| In-game save key and folder | F5 writes `user://saves/<game>.ranch.json` | the original saves when sleeping; decide the save flow (M7) | m3 |
+| Timers of actors created in play (plort `destroyTime`, transform/reproduce times) | written as 0 (the record default) | model plort expiry and slime timers | m3 |
+| Fear of slimes created in play | not written; loaded slimes keep their saved fear | model fear | m3 |
+| Matching spawned actors to the save | same type at the same spot within 1 cm in the first second | the loader hands over save ids (m3-plots) | m3 |
+| HUD clock readout | "Day N, HH:MM" top right, openranch's own | the original's HUD clock | day cycle |
+| Several time-window scripts on one object | shown only while all windows are open | the original's last-script-wins order (doesn't occur on The Ranch) | day cycle |
+| Sky day/night blend | Godot gradient between blended horizon and sky colours | the original's sky shader blend values | day cycle |
+| Which day/night lights cast shadows | all directional lights, 150 m | the Light component's shadow setting | day cycle |

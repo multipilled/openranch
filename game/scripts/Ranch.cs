@@ -20,9 +20,12 @@ namespace OpenRanch.Game;
 ///   --save FILE                     open this save: an original v12 save or an openranch .ranch.json (plots,
 ///                                   corral slimes, money, ranch upgrades, time of day); read only
 ///   --m3-check                      with --save: check the ranch against the save reader, print a report, quit
+///   --save-out FILE                 with --save: once the world has settled, write the live ranch to FILE
+///                                   (.ranch.json), then quit (unless --m3-check runs); in play F5 saves
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
+///   --hour H, --day-speed X, --day-check   the world clock, see World/WorldTime.cs
 /// </summary>
 public partial class Ranch : Node3D
 {
@@ -50,7 +53,10 @@ public partial class Ranch : Node3D
         var zoneName = Arg("--zone") ?? "zoneRANCH";
         // Milestone 3: a save's plots stand on their sites (game/scripts/SaveLoad).
         var saved = Arg("--save") is { } savePath ? SaveLoad.SavedRanch.Load(install, assets, savePath, zoneName) : null;
-        var state = saved?.State ?? WorldState.NewGame;
+        // The world clock starts at the save's world time, or 9:00 on day 1, and runs (World/WorldTime.cs).
+        var ranchState = saved?.Ranch ?? new OpenRanch.Ranch.RanchState();
+        WorldTime.ApplyStartHour(ranchState, args);
+        var state = (saved?.State ?? WorldState.NewGame) with { Hour = (float)ranchState.Clock.Hour, RunningClock = true };
         var zone = ZoneExtractor.Extract(assets, scene, zoneName, state);
         if (saved is not null)
             zone = saved.Apply(zone);
@@ -67,8 +73,10 @@ public partial class Ranch : Node3D
                  $"{built.MeshInstances} meshes, {built.MultiMeshes} multimeshes, {built.Instances} instances, " +
                  $"{world.MaterialCount} materials, {world.TextureCount} textures, {built.Shapes} collision shapes");
 
-        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour);
+        var worldLighting = new WorldLighting(lighting, ambience, zone.Caves, zone.Lights, state.Hour, TimeOfDayLight.Read(assets, scene));
         AddChild(worldLighting);
+        var timed = TimedObjects.Build(zone, world, layers, worldLighting, state.Hour);
+        AddChild(timed);
 
         var player = new PlayerController { Name = "Player" };
         AddChild(player);
@@ -95,13 +103,19 @@ public partial class Ranch : Node3D
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
         // With a save, its money and corral slimes take the place of the demo slimes.
         var m2Args = saved is null ? args : args.Append("--no-slimes").ToArray();
-        if (Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args) is { } m2)
+        var m2 = Slimes.M2World.Create(install, zone, layers, player, state.Hour, m2Args);
+        if (m2 is not null)
         {
             AddChild(m2);
             saved?.Populate(m2);
+            // Milestone 3: the live ranch saves back to openranch's own format (SaveLoad/SaveWriter.cs).
+            if (saved is not null)
+                AddChild(new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0));
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
                 AddChild(new SaveLoad.M3Check(saved, zone, m2, install));
         }
+        AddChild(WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
+            ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args));
     }
 
     private void ShowMessage(string text)

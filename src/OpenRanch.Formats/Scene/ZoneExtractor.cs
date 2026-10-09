@@ -28,9 +28,11 @@ public sealed record ZoneStats(int Nodes, int SkippedInactive, int Renderers, in
 /// upgrades and so on, as stored in a save's player progress), the hour of the day, and gadget mode.
 /// <see cref="Hidden"/> lists scene game objects (path ids in the scene file) that the game has
 /// replaced or removed, such as the plot standing on a land plot site when a save built another.
+/// With <see cref="RunningClock"/> set, objects tied to the time of day are kept whatever the hour and
+/// listed in <see cref="ZoneExtract.Timed"/>, for a world clock to switch them as it runs.
 /// </summary>
 public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Hour, bool GadgetMode = false,
-    IReadOnlySet<long>? Hidden = null)
+    IReadOnlySet<long>? Hidden = null, bool RunningClock = false)
 {
     /// <summary>A new game at midday: no progress yet.</summary>
     public static WorldState NewGame { get; } = new(new Dictionary<int, int>(), 12f);
@@ -38,8 +40,15 @@ public sealed record WorldState(IReadOnlyDictionary<int, int> Progress, float Ho
     public int ProgressOf(int type) => Progress.TryGetValue(type, out var v) ? v : 0;
 }
 
+/// <summary>
+/// One area's renderers, solid colliders, cave volumes and lamps. <see cref="Timed"/> holds what belongs
+/// to objects tied to the time of day, kept out of the other lists (only with <see cref="WorldState.RunningClock"/>).
+/// </summary>
 public sealed record ZoneExtract(string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders, ZoneStats Stats,
-    IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights);
+    IReadOnlyList<CaveVolume> Caves, IReadOnlyList<LightItem> Lights, IReadOnlyList<TimedGroup>? Timed = null)
+{
+    public IReadOnlyList<TimedGroup> TimedGroups => Timed ?? [];
+}
 
 /// <summary>
 /// A point or spot light placed in the world (Unity light types: 0 spot, 2 point). Lights listed by a
@@ -106,6 +115,9 @@ public static class ZoneExtractor
         var lights = new List<LightItem>();
         var lowerLods = new HashSet<long>();
         var hiddenObjects = new HashSet<long>(state.Hidden ?? new HashSet<long>());
+        // Objects tied to the time of day, with their windows, by game object id (only with a running clock).
+        var windows = new Dictionary<long, List<TimeWindow>>();
+        var timed = new Dictionary<IReadOnlyList<TimeWindow>, TimedGroup>(ReferenceEqualityComparer.Instance);
         int nodes = 0, inactive = 0, triggers = 0;
 
         // First pass: renderers that only show at lower levels of detail, and objects hidden at runtime.
@@ -126,7 +138,7 @@ public static class ZoneExtractor
                                 lowerLods.Add(r.PathId);
                         break;
                     case { ClassId: UnityClassId.MonoBehaviour } script:
-                        HideBy(assets, script, t.GameObject, state, hiddenObjects);
+                        HideBy(assets, script, t.GameObject, state, hiddenObjects, windows);
                         break;
                 }
             }
@@ -136,7 +148,7 @@ public static class ZoneExtractor
         }
         CollectLods(root);
 
-        void Walk(AssetRef transformRef, Matrix4x4 parentWorld, string parentPath)
+        void Walk(AssetRef transformRef, Matrix4x4 parentWorld, string parentPath, IReadOnlyList<TimeWindow> openDuring)
         {
             var t = assets.Read(transformRef, TransformData.Read);
             var go = assets.Read(scene, t.GameObject, GameObjectData.Read);
@@ -151,6 +163,12 @@ public static class ZoneExtractor
 
             var world = t.LocalMatrix * parentWorld;
             var path = parentPath.Length == 0 ? go.Name : parentPath + "/" + go.Name;
+            if (t.GameObject.FileId == 0 && windows.TryGetValue(t.GameObject.PathId, out var own))
+            {
+                openDuring = openDuring.Concat(own).ToList();
+                timed[openDuring] = new TimedGroup(path, openDuring, [], [], []);
+            }
+            var group = openDuring.Count == 0 ? null : timed[openDuring];
 
             MeshFilterData? filter = null;
             CaveSettingsData? cave = null;
@@ -183,7 +201,7 @@ public static class ZoneExtractor
                         if (assets.Resolve(scene, filter.Mesh) is not { } mesh)
                             continue;
                         var materials = r.Materials.Select(m => assets.Resolve(scene, m)).ToList();
-                        renderers.Add(r.IsStaticBatched
+                        (group?.Renderers ?? renderers).Add(r.IsStaticBatched
                             ? new RenderItem(path, Matrix4x4.Identity, mesh, r.StaticBatchFirstSubMesh, r.StaticBatchSubMeshCount,
                                 materials, true, r.CastShadows, go.Layer)
                             : new RenderItem(path, world, mesh, 0, -1, materials, false, r.CastShadows, go.Layer));
@@ -193,7 +211,7 @@ public static class ZoneExtractor
                     {
                         var light = ReadLight(assets, comp);
                         if (light.Type is 0 or 2 && (light.Enabled || caveLightController is not null))
-                            lights.Add(light with { Path = path, World = world, CaveController = caveLightController });
+                            (group?.Lights ?? lights).Add(light with { Path = path, World = world, CaveController = caveLightController });
                         break;
                     }
                     case UnityClassId.BoxCollider or UnityClassId.SphereCollider or UnityClassId.CapsuleCollider or UnityClassId.MeshCollider:
@@ -212,7 +230,7 @@ public static class ZoneExtractor
                         var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(scene, col.Mesh) : null;
                         if (col.Shape == ColliderShape.Mesh && mesh is null)
                             continue;
-                        colliders.Add(new ColliderItem(path, world, col, mesh, go.Layer));
+                        (group?.Colliders ?? colliders).Add(new ColliderItem(path, world, col, mesh, go.Layer));
                         break;
                     }
                 }
@@ -220,12 +238,12 @@ public static class ZoneExtractor
 
             foreach (var child in t.Children)
                 if (assets.Resolve(scene, child) is { } childRef)
-                    Walk(childRef, world, path);
+                    Walk(childRef, world, path, openDuring);
         }
-        Walk(root, Matrix4x4.Identity, "");
+        Walk(root, Matrix4x4.Identity, "", []);
 
         return new ZoneExtract(rootName, renderers, colliders,
-            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights);
+            new ZoneStats(nodes, inactive, renderers.Count, lowerLods.Count, colliders.Count, triggers), caves, lights, timed.Values.ToList());
     }
 
     private sealed record CaveSettingsData(int Zone, bool AffectsLighting, IReadOnlyList<long> Lights);
@@ -304,7 +322,8 @@ public static class ZoneExtractor
     /// Applies the scripts that switch world objects on and off, as they would be when the game starts
     /// in <paramref name="state"/>. Each hidden object's id is added to <paramref name="hidden"/>.
     /// </summary>
-    private static void HideBy(AssetSet assets, AssetRef behaviour, PPtr owner, WorldState state, HashSet<long> hidden)
+    private static void HideBy(AssetSet assets, AssetRef behaviour, PPtr owner, WorldState state, HashSet<long> hidden,
+        Dictionary<long, List<TimeWindow>> windows)
     {
         var r = assets.Reader(behaviour);
         var (_, enabled, script, _) = Unity.Managed.MonoBehaviourReader.ReadHeader(r);
@@ -338,17 +357,20 @@ public static class ZoneExtractor
                 break;
             }
             // Lamps and night decorations: the listed objects show only between two hours, wrapping past midnight.
+            // With a running clock they are kept and listed with their window instead.
             case "EnableOnlyDuringTimeWindow":
             {
-                var start = r.ReadSingle();
-                var end = r.ReadSingle();
+                var window = new TimeWindow(r.ReadSingle(), r.ReadSingle());
                 var count = r.ReadInt32();
-                var h = state.Hour;
-                var active = start <= h && h <= end || start > end && (h >= start || h <= end);
                 for (var i = 0; i < count; i++)
                 {
                     var target = PPtr.Read(r);
-                    if (!active)
+                    if (state.RunningClock)
+                    {
+                        if (target.FileId == 0 && !target.IsNull)
+                            (windows.TryGetValue(target.PathId, out var list) ? list : windows[target.PathId] = []).Add(window);
+                    }
+                    else if (!window.IsOpen(state.Hour))
                         Hide(target);
                 }
                 break;

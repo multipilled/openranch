@@ -9,7 +9,7 @@
 # heredoc never arrives and the interpreter hangs holding a slot. Write the script to a file instead.
 # Stale slots (holder gone for > 40 min) are reclaimed. If a job of yours hangs, release only its own
 # slot dir (check its owner file first).
-SLOTS=${CPU_SLOTS:-3}
+SLOTS=${CPU_SLOTS:-4}
 DIR=${CPU_SLOT_DIR:-$HOME/.claude/cpu-slots}
 mkdir -p "$DIR"
 owner="$1"; shift

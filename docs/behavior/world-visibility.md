@@ -32,5 +32,6 @@ a script (`EnableOnlyDuringTimeWindow`) with a start and an end hour. They show 
 the day is between the two, both included. When the start is later than the end, the window wraps
 past midnight (for example 18 to 6 means evening through early morning).
 
-openranch starts from a new game at midday unless it is given a save, in which case it uses that
-save's progress counters and the hour of its world clock.
+openranch starts from a new game at 9:00 on day 1 (see [day-cycle.md](day-cycle.md)) unless it is given a
+save, in which case it uses that save's progress counters and world time. The clock runs, so objects with
+a time window switch on and off as the hours pass.
