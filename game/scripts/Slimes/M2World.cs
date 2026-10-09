@@ -93,7 +93,7 @@ public partial class M2World : Node3D
         _worldTime = worldTime;
         Clock.Set(worldTime.Ranch.WorldTime / WorldClock.SecondsPerHour);
         SyncSpeed();
-        Market.StartDay(Clock.Day);
+        Market.Open(Clock.Day);
     }
 
     // The world clock runs at its own speed, and at ffSecsPerGameDay instead of secsPerGameDay while

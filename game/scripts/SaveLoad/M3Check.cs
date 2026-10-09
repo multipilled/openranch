@@ -30,10 +30,12 @@ public partial class M3Check : Node
     private readonly ZoneExtract _zone;
     private readonly Slimes.M2World _m2;
     private readonly GameEnums _names;
+    private readonly Player.PlayerController? _player;
     private double _time;
 
-    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install)
+    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install, Player.PlayerController? player = null)
     {
+        _player = player;
         Name = "M3Check";
         _saved = saved;
         _zone = zone;
@@ -232,6 +234,36 @@ public partial class M3Check : Node
         }
         Check(packWrong.Count == 0, $"vacpack: {string.Join(", ", Enumerable.Range(0, Simulation.Vacpack.TotalSlots).Select(i => Slot(_m2.Pack[i])))}; " +
                                     $"{_m2.Pack.UsableSlots} slots usable, {_m2.Pack.MaxPerSlot} per slot" + string.Concat(packWrong.Select(w => "\n         differs: " + w)));
+
+        // Market: every plort the market buys has the save's saturation, and today's prices are set.
+        var marketWrong = new List<string>();
+        var savedSaturation = reader.World.MarketSaturation.ToDictionary(kv => _names.Item(kv.Key), kv => kv.Value);
+        foreach (var (id, saturation) in _m2.Market.Saturations)
+            if (savedSaturation.TryGetValue(id, out var want) && want != saturation)
+                marketWrong.Add($"{id}: {saturation:F3}, save {want:F3}");
+        var marketKnown = savedSaturation.Keys.Count(_m2.Market.Accepts);
+        var pink = _m2.Market.Accepts("PINK_PLORT") ? $"; pink plort {_m2.Market.Price("PINK_PLORT")} today" : "";
+        Check(marketWrong.Count == 0 && marketKnown > 0,
+            $"market: {marketKnown} of the market's {_m2.Market.Accepted.Count()} plorts carry the save's saturation " +
+            $"({savedSaturation.Count} in the save){pink}" + string.Concat(marketWrong.Take(5).Select(w => "\n         differs: " + w)));
+
+        // Player: standing where the save left them (feet; the body settles a little in 4 s) and looking the same way.
+        var savedPlayer = reader.Player;
+        if (_saved.Player is null || _player is null)
+            report.AppendLine($"  info player saved outside the zone (region set {savedPlayer.RegionSetId} at {savedPlayer.Position}); starts at the zone's spawn");
+        else
+        {
+            var at = Unity(_player.GlobalPosition);
+            var off = N.Vector3.Distance(at, new N.Vector3(savedPlayer.Position.X, savedPlayer.Position.Y, savedPlayer.Position.Z));
+            float Turn(float a, float b) => System.Math.Abs(((a - b) % 360 + 540) % 360 - 180);
+            var pitch = -Mathf.RadToDeg(_player.Camera.Rotation.X);
+            var yaw = -Mathf.RadToDeg(_player.Rotation.Y);
+            var pitchOff = Turn(pitch, savedPlayer.Rotation.X);
+            var yawOff = Turn(yaw, savedPlayer.Rotation.Y);
+            Check(off < 0.5f && pitchOff < 0.01f && yawOff < 0.01f,
+                $"player: at {at.X:F2}, {at.Y:F2}, {at.Z:F2} ({off:F3} m from the save), pitch {pitch:F2}, yaw {yaw:F2} " +
+                $"(save {savedPlayer.Rotation.X:F2}, {savedPlayer.Rotation.Y:F2})");
+        }
 
         // One clock: milestone 2's game time is the world clock's.
         var worldHours = ranch.WorldTime / WorldClock.SecondsPerHour;

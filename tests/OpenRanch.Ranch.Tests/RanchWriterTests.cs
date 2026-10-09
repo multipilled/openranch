@@ -228,4 +228,37 @@ public class RanchWriterTests
         Assert.Equal(90f, euler.Y, 0.01f);
         Assert.True(Vector3.Distance(Vector3.UnitX, Vector3.Transform(Vector3.UnitZ, FromEuler(0, 90, 0))) < 1e-5f);
     }
+
+    [Fact]
+    public void The_markets_saturation_is_laid_over_the_saved_one()
+    {
+        var loaded = Loaded();
+        loaded.World.MarketSaturation = new Dictionary<int, float> { [30] = 5.5f, [31] = 12f };
+        var ranch = RanchWriter.Merge(loaded, Unchanged(loaded));
+        Assert.Equal(loaded.World.MarketSaturation, ranch.World.MarketSaturation);
+        var live = new LiveRanch { Money = loaded.Player.Money, WorldTime = loaded.WorldTime, MarketSaturation = new Dictionary<int, float> { [31] = 13f, [40] = 1f } };
+        ranch = RanchWriter.Merge(loaded, live);
+        Assert.Equal(5.5f, ranch.World.MarketSaturation[30]);
+        Assert.Equal(13f, ranch.World.MarketSaturation[31]);
+        Assert.Equal(1f, ranch.World.MarketSaturation[40]);
+        Assert.Equal(loaded.World.EconomySeed, ranch.World.EconomySeed);
+    }
+
+    [Fact]
+    public void The_player_is_written_where_the_world_has_them_or_left_where_saved()
+    {
+        var loaded = Loaded();
+        loaded.Player.Position = new Vec3(1, 2, 3);
+        loaded.Player.Rotation = new Vec3(10, 200, 0);
+        Assert.Equal(new Vec3(1, 2, 3), RanchWriter.Merge(loaded, Unchanged(loaded)).Player.Position);
+        var ranch = RanchWriter.Merge(loaded, new LiveRanch
+        {
+            Money = loaded.Player.Money,
+            WorldTime = loaded.WorldTime,
+            PlayerPosition = new Vec3(4, 5, 6),
+            PlayerRotation = new Vec3(350, 90, 0),
+        });
+        Assert.Equal(new Vec3(4, 5, 6), ranch.Player.Position);
+        Assert.Equal(new Vec3(350, 90, 0), ranch.Player.Rotation);
+    }
 }

@@ -96,7 +96,7 @@ public sealed class PlortMarket
     }
 
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
-    private readonly IMarketMood _mood;
+    private IMarketMood _mood;
     private bool _firstUpdateDone;
 
     public PlortMarket(MarketData data, IMarketMood? mood = null, bool dynamic = true)
@@ -125,6 +125,38 @@ public sealed class PlortMarket
     public float Saturation(string id) => _entries[id].Saturation;
 
     public void SetSaturation(string id, float value) => _entries[id].Saturation = value;
+
+    /// <summary>Every plort's saturation now, by item id.</summary>
+    public IReadOnlyDictionary<string, float> Saturations => _entries.ToDictionary(e => e.Key, e => e.Value.Saturation);
+
+    /// <summary>
+    /// Takes a saved market: the saturation of each plort it buys (others keep theirs) and, if given,
+    /// the mood drawn from the save's seed. Prices follow at <see cref="Open"/>.
+    /// </summary>
+    public void Load(IReadOnlyDictionary<string, float> saturation, IMarketMood? mood = null)
+    {
+        foreach (var (id, value) in saturation)
+            if (_entries.TryGetValue(id, out var e))
+                e.Saturation = value;
+        if (mood is not null)
+            _mood = mood;
+    }
+
+    /// <summary>
+    /// The market's first update once a game is opened: today's prices for <paramref name="day"/> from
+    /// the saturation as it stands, with no recovery, and the base values as yesterday's prices (static
+    /// analysis of EconomyDirector: its first update after the level loads skips the recovery step).
+    /// </summary>
+    public void Open(int day)
+    {
+        Day = day;
+        foreach (var (id, e) in _entries)
+        {
+            e.PreviousPrice = e.Data.BaseValue;
+            e.Price = TargetPrice(id, e, day);
+        }
+        _firstUpdateDone = true;
+    }
 
     /// <summary>The market is closed for the first few minutes after midnight while prices change.</summary>
     public bool IsClosed(float hourOfDay) => Dynamic && hourOfDay * 60f < Data.DailyShutdownMinutes;

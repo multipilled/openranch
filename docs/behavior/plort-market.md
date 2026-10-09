@@ -49,6 +49,21 @@ game's code and are named constants in `PlortMarket.cs`.
 The board shows the price rounded to a whole coin (halves round to the even coin), and the change
 from yesterday's rounded price.
 
+## Saved
+
+- A save keeps the market's seed (drawn once for a new game) and the saturation of every plort.
+  Today's and yesterday's prices are not saved.
+- When a game is opened, the market's first update works out today's prices from the saved
+  saturation for the current day, without the recovery step: recovery happens only at the
+  midnights the clock passes in play. Yesterday's price is the base value until the next midnight,
+  so the board shows the change from the base value on the first day.
+
+Checked: static analysis of EconomyDirector and the save code. openranch loads the saturation,
+seeds its own mood with the save's seed (so a save gets the same prices every time it is opened,
+though not the original's), opens the market for the clock's day (`PlortMarket.Load`, `Open`) and
+writes every plort's saturation back when saving. `--m3-check` compares each plort's saturation
+with the save; `PlortMarketTests` and `RanchWriterTests` cover the rules.
+
 ## Selling
 
 - Selling pays the current rounded price per plort and raises that plort's saturation.
