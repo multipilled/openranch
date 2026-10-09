@@ -42,3 +42,18 @@ before other work relies on it.
 | Rotten produce look | looks like normal produce | the rot material switch | m3 |
 | Deluxe coop | its regions are not made deluxe | the deluxe coop's behaviour | m3 |
 | `--m3-check` floor test | things 1.5-3 m above a plot's middle count as clear | (check only, not game behaviour) | m3 |
+| Interact key | E | the original's default binding | m3 rest |
+| Ranch house screen | none: using the door sleeps at once; no save on sleep | the ranch house UI and save-on-sleep | m3 rest |
+| Ranch house door collider | an area on its own layer (bit 20) rays hit but the player passes | the original's solid box | m3 rest |
+| Daily plort price drift | openranch's drift seeded from the save's seed (same every load, differs from the original) | the original's noise function | m3 rest |
+| Vacpack slot fear | only hunger and agitation modelled; saved fear kept unchanged | model fear | m3 rest |
+| Player frozen while asleep | movement processing switched off | the original's freeze | m3 rest |
+| Zone start point | the debug start if any, else the first non-echo-gordo teleporter destination | (openranch's own choice; destinations are data) | m4 zones |
+| Moss Blanket start | echo-gordo teleporter in the entrance cell (the Hobson vault teleporter is hidden in a new game) | the original's new-game arrival | m4 zones |
+| Terrain height sample order | rows along z | a terrain that is the only ground in a spot with asymmetric data | m4 zones |
+| Largo/tarr growth on transform | full collider at once, lifted by the radius difference | the original's 0.5 s scale-up | m5 slimes |
+| Transparent slime parts (render queue > 2500, e.g. rad aura) | not drawn | the effect shaders | m5 slimes |
+| Trait vs food-seeking tie | the trait wins | the original's prefab component order | m5 slimes |
+| `--slime-zoo` set-up | floor, 4 m pens, items-only walls, every slime fully hungry | (test set-up only) | m5 slimes |
+| Largo meal effect | counts as two meals (hunger and agitation drop twice) | a recording of a largo eating | m5 slimes |
+| Slime health recovery between tarr bites | none | the health component's recovery | m5 slimes |
