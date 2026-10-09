@@ -20,6 +20,9 @@ public sealed record PrefabRegion(PlotRegion Region, IReadOnlyList<long> Chain);
 /// </summary>
 public sealed record PrefabTrigger(PlotRegion Region, IReadOnlyList<long> Chain, long Object, bool Sphere = false);
 
+/// <summary>An enabled script component of a prefab: its class, the game object it sits on, its fields and the file it is in.</summary>
+public sealed record PrefabScriptPart(string Class, long Object, OpenRanch.Formats.Unity.Managed.SerializedObject Data, SerializedFile File);
+
 /// <summary>
 /// Everything a prefab draws and collides with, the objects that are switched off included, so that
 /// switching objects on or off later (as plot upgrades do) changes what is built. Walked the way the
@@ -33,9 +36,10 @@ public sealed class PrefabTree
 
     private PrefabTree(string name, AssetRef root, Matrix4x4 rootLocal, Dictionary<long, PrefabObject> objects,
         Dictionary<long, IReadOnlyList<long>> chains, List<PrefabPart<RenderItem>> renderers, List<PrefabPart<ColliderItem>> colliders,
-        List<PrefabRegion> regions, List<PrefabTrigger> triggers)
+        List<PrefabRegion> regions, List<PrefabTrigger> triggers, List<PrefabScriptPart> scripts)
     {
         Triggers = triggers;
+        Scripts = scripts;
         _chains = chains;
         Name = name;
         Root = root;
@@ -59,14 +63,21 @@ public sealed class PrefabTree
     /// <summary>The colliders (triggers or not) of objects carrying one of <see cref="TriggerScripts"/>, switched on or not.</summary>
     public IReadOnlyList<PrefabTrigger> Triggers { get; }
 
+    /// <summary>Every enabled script component of the prefab, switched on or not.</summary>
+    public IReadOnlyList<PrefabScriptPart> Scripts { get; }
+
+    /// <summary>The first script of <paramref name="scriptClass"/> on the prefab, or null.</summary>
+    public PrefabScriptPart? Script(string scriptClass) => Scripts.FirstOrDefault(s => s.Class == scriptClass);
+
     /// <summary>
     /// Scripts whose trigger colliders are kept as <see cref="Triggers"/>: the menu activator a player
     /// uses (<c>UIActivator</c>), a coop's inside and its vitamizer's reach (<c>CoopRegion</c>,
     /// <c>VitamizerRegion</c>), a garden's planting hole (<c>GardenCatcher</c>), the incinerator's
-    /// fire (<c>Incinerate</c>) and a silo's or feeder's input (<c>SiloCatcher</c>).
+    /// fire (<c>Incinerate</c>), a silo's or feeder's input (<c>SiloCatcher</c>) and the area a plort
+    /// collector sweeps (<c>TrackCollisions</c>).
     /// </summary>
     public static readonly IReadOnlySet<string> TriggerScripts = new HashSet<string>(StringComparer.Ordinal)
-        { "UIActivator", "CoopRegion", "VitamizerRegion", "GardenCatcher", "Incinerate", "SiloCatcher" };
+        { "UIActivator", "CoopRegion", "VitamizerRegion", "GardenCatcher", "Incinerate", "SiloCatcher", "TrackCollisions" };
 
     /// <summary>
     /// Whether every object of <paramref name="chain"/> is on, with the objects in
@@ -107,6 +118,7 @@ public sealed class PrefabTree
         var colliders = new List<PrefabPart<ColliderItem>>();
         var regions = new List<PrefabRegion>();
         var triggers = new List<PrefabTrigger>();
+        var scriptParts = new List<PrefabScriptPart>();
         var lowerLods = new HashSet<long>();
         var walked = new List<(AssetRef Go, GameObjectData Data, Matrix4x4 ToRoot, string Path, IReadOnlyList<long> Chain)>();
         var rootLocal = Matrix4x4.Identity;
@@ -148,8 +160,10 @@ public sealed class PrefabTree
             var file = goRef.File;
             var components = go.Components.Select(c => assets.Resolve(file, c)).OfType<AssetRef>().ToList();
             var filter = components.Where(c => c.ClassId == UnityClassId.MeshFilter).Select(c => assets.Read(c, MeshFilterData.Read)).FirstOrDefault();
-            var scriptClasses = components.Where(c => c.ClassId == UnityClassId.MonoBehaviour)
-                .Select(c => scripts.Reader.Read(c)).Where(m => m.Enabled && m.ScriptClass is not null).Select(m => m.ScriptClass!).ToList();
+            var behaviours = components.Where(c => c.ClassId == UnityClassId.MonoBehaviour)
+                .Select(c => scripts.Reader.Read(c)).Where(m => m.Enabled && m.ScriptClass is not null).ToList();
+            var scriptClasses = behaviours.Select(m => m.ScriptClass!).ToList();
+            scriptParts.AddRange(behaviours.Where(m => m.Data is not null).Select(m => new PrefabScriptPart(m.ScriptClass!, goRef.PathId, m.Data!, file)));
             var isCorralRegion = scriptClasses.Contains("CorralRegion");
             // A script counts as its base class too (plot activators derive from UIActivator).
             var triggerScript = scriptClasses.Select(c => TriggerScripts.FirstOrDefault(t => t == c
@@ -191,7 +205,7 @@ public sealed class PrefabTree
                 }
             }
         }
-        return new PrefabTree(rootGo.Name, root, rootLocal, objects, chains, renderers, colliders, regions, triggers);
+        return new PrefabTree(rootGo.Name, root, rootLocal, objects, chains, renderers, colliders, regions, triggers, scriptParts);
     }
 
     /// <summary>The game object a component (a joint, a script) sits on: every component's data starts with a reference to it.</summary>

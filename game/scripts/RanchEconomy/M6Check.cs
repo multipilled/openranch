@@ -56,6 +56,7 @@ public partial class M6Check : Node
             await Expansion();
             _produce = new ProduceCheck(this, _economy);
             await _produce.Run();
+            await new MachinesCheck(this, _economy).Run(CorralSite, _produce.GardenSite);
             await Sleep();
         }
         catch (Exception e)

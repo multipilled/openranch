@@ -58,6 +58,9 @@ public partial class Economy : Node3D
         writer.Timers = Produce.TimersOf;
         writer.Unsaved = Produce.Unsaved;
         writer.Crops = Produce.CropClocks;
+        // Silos, feeders, plort collectors and the incinerator (RanchMachines.cs).
+        Machines = new RanchMachines(this);
+        AddChild(Machines);
 
         // The live plots are what the checks and the writer see.
         saved.LiveRenderers = () => Plots.Renderers;
@@ -87,6 +90,7 @@ public partial class Economy : Node3D
     public RanchHouseScreen? HouseScreen { get; }
     public Interactor Interactor { get; }
     public RanchProduce Produce { get; }
+    public RanchMachines Machines { get; }
 
     /// <summary>Where <see cref="Save"/> writes.</summary>
     public string SavePath => _savePath ?? _writer.PlayPath;

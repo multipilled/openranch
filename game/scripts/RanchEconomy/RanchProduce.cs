@@ -56,6 +56,8 @@ public partial class RanchProduce : Node
     {
         Name = "Produce";
         _economy = economy;
+        // Growing follows the world clock, which also runs while the ranch house screen pauses the game for sleep.
+        ProcessMode = ProcessModeEnum.Always;
         _data = ProduceData.Read(economy.M2.Scripts);
         var names = economy.Names;
         _sprinkler = names.Value(GameEnum.PlotUpgrade, "SPRINKLER");
@@ -133,8 +135,9 @@ public partial class RanchProduce : Node
             {
                 var cycle = new ProduceCycle(times, _draws);
                 var growing = new Growing(cycle);
-                if (saved.Joint is { } joint && FindJoint(joint) is var (crop, i))
+                if (saved.Joint is { } joint && FindJoint(joint) is { } found)
                 {
+                    var (crop, i) = found;
                     crop.Joints[i] = actor;
                     growing.Crop = crop;
                     growing.Joint = i;
@@ -282,6 +285,8 @@ public partial class RanchProduce : Node
             Hold!.Hang(actor, unripe: true, times.ReleasePrepSeconds);
             var cycle = new ProduceCycle(times, _draws);
             cycle.Attach(now);
+            if (request.SpawnAt is { } began)
+                cycle.History[0] = (ProduceStage.Unripe, began);
             var growing = new Growing(cycle) { Crop = crop, Joint = joint };
             crop.Joints[joint] = actor;
             _produce[actor] = growing;
