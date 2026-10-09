@@ -17,7 +17,10 @@ public sealed record SlimeEatingData(float MinDriveToEat, float DrivePerEat, flo
 /// <summary>One emotion (hunger, agitation) from the slime prefab's SlimeEmotions component: where it starts, where it drifts to, and how fast.</summary>
 public sealed record EmotionTuning(float Start, float Rest, float DriftPerGameHour);
 
-/// <summary>One slime type as the game defines it.</summary>
+/// <summary>
+/// One slime type as the game defines it. A largo names its two base slimes (<see cref="BaseSlimes"/>,
+/// the definition's <c>BaseSlimes</c>, as item ids); its diet is stored already combined. See docs/behavior/largos.md.
+/// </summary>
 public sealed record SlimeInfo(
     string AssetName,
     string Name,
@@ -27,7 +30,8 @@ public sealed record SlimeInfo(
     SlimeDietData Diet,
     SlimeEatingData? Eating,
     EmotionTuning? Hunger,
-    EmotionTuning? Agitation);
+    EmotionTuning? Agitation,
+    IReadOnlyList<string>? BaseSlimes = null);
 
 /// <summary>
 /// Slime definitions read from the player's install: diet, favorites, plorts, and the eating and
@@ -51,6 +55,9 @@ public sealed class SlimeData
         _byId.TryGetValue(id, out var slime) ? slime : throw new KeyNotFoundException($"No slime definition for {id}.");
 
     public bool TryGet(string id, out SlimeInfo slime) => _byId.TryGetValue(id, out slime!);
+
+    /// <summary>A set of slime types made by hand, for tests.</summary>
+    public static SlimeData FromInfos(IEnumerable<SlimeInfo> slimes) => new(slimes.ToList());
 
     public static SlimeData Read(GameScripts scripts)
     {
@@ -80,10 +87,16 @@ public sealed class SlimeData
             eating[key] = (eat, Emotion(emotions, "initHunger"), Emotion(emotions, "initAgitation"));
         }
 
+        // Base slimes are references to other definitions; name them by their item ids.
+        var definitions = scripts.OfClass("SlimeDefinition").ToList();
+        var idOfDefinition = definitions.ToDictionary(m => (m.Ref.File.Path, m.Ref.PathId), m => ids.NameOf(Convert.ToInt64(m.Data.Data!["IdentifiableId"])));
         var slimes = new List<SlimeInfo>();
-        foreach (var (asset, mb) in scripts.OfClass("SlimeDefinition"))
+        foreach (var (asset, mb) in definitions)
         {
             var d = mb.Data!;
+            var bases = d.List("BaseSlimes").OfType<PPtr>()
+                .Select(p => scripts.Assets.Resolve(asset.File, p) is { } r && idOfDefinition.TryGetValue((r.File.Path, r.PathId), out var id) ? id : null)
+                .OfType<string>().ToList();
             var diet = d.Object("Diet")!;
             List<string> Names(SerializedObject o, string field, EnumValues e) =>
                 o.List(field).Select(v => e.NameOf(Convert.ToInt64(v))).ToList();
@@ -96,7 +109,8 @@ public sealed class SlimeData
             var tuned = eating.TryGetValue((asset.File.Path, asset.PathId), out var tuning);
             slimes.Add(new SlimeInfo(
                 mb.Name, d.Get<string>("Name"), ids.NameOf(Convert.ToInt64(d["IdentifiableId"])),
-                d.Get<bool>("IsLargo"), d.Get<bool>("CanLargofy"), dietData, tuned ? tuning.Eat : null, tuned ? tuning.Hunger : null, tuned ? tuning.Agitation : null));
+                d.Get<bool>("IsLargo"), d.Get<bool>("CanLargofy"), dietData, tuned ? tuning.Eat : null, tuned ? tuning.Hunger : null, tuned ? tuning.Agitation : null,
+                bases));
         }
         return new SlimeData(slimes);
     }
