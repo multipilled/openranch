@@ -11,7 +11,17 @@ namespace OpenRanch.Ranch;
 /// its <c>SpawnResource</c> id, what it draws, and its spawn joints (where produce hangs while it
 /// grows), relative to its root.
 /// </summary>
-public sealed record CropPrefab(int Id, string Name, PrefabTree Tree, IReadOnlyList<Matrix4x4> JointsToRoot);
+public sealed record CropPrefab(int Id, string Name, PrefabTree Tree, IReadOnlyList<Matrix4x4> JointsToRoot)
+{
+    /// <summary>Its <c>SpawnResource</c> script (what grows and how often) and the file it is in.</summary>
+    public CropScript? Script { get; init; }
+}
+
+/// <summary>
+/// A crop's <c>SpawnResource</c> script and the file it is in (for <see cref="ProduceData.SpawnRules"/>), and
+/// whether the same object carries a <c>SpawnResourceForceFirstRipeness</c> (its first batch grows ripe).
+/// </summary>
+public sealed record CropScript(SerializedFile File, SerializedObject Data, bool ForceFirstRipeness);
 
 /// <summary>
 /// A crop standing in the world, planted on a plot or placed in the scene: where it stands (Unity
@@ -20,6 +30,9 @@ public sealed record CropPrefab(int Id, string Name, PrefabTree Tree, IReadOnlyL
 /// </summary>
 public sealed record CropSpawner(string Path, Matrix4x4 World, IReadOnlyList<Vector3> Joints, CropPrefab? Prefab = null)
 {
+    /// <summary>Its <c>SpawnResource</c> script: the prefab's for a plot's crop, the scene's for the scene's own.</summary>
+    public CropScript? Script { get; init; }
+
     /// <summary>The position the game registers the spawner at (its transform's position).</summary>
     public Vector3 Position => World.Translation;
 }
@@ -55,7 +68,7 @@ public sealed class PlotCrops
             // The director keeps the last prefab listed for an id.
             var tree = PrefabTree.Read(scripts, root);
             var joints = JointObjects(scripts, root.File, spawner.Data).Where(tree.Objects.ContainsKey).Select(j => tree.Objects[j].ToRoot).ToList();
-            prefabs[id] = new CropPrefab(id, tree.Name, tree, joints);
+            prefabs[id] = new CropPrefab(id, tree.Name, tree, joints) { Script = new CropScript(spawner.Ref.File, spawner.Data, ForcesFirstRipeness(scripts, root)) };
         }
         return new PlotCrops(prefabs);
     }
@@ -68,7 +81,7 @@ public sealed class PlotCrops
         Matrix4x4.Decompose(plot.Site.PlotWorld, out _, out var rotation, out var position);
         Matrix4x4.Decompose(prefab.Tree.RootLocal, out var scale, out _, out _);
         var world = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation) * Matrix4x4.CreateTranslation(position);
-        return new CropSpawner($"{plot.Site.Id}/{prefab.Name}", world, prefab.JointsToRoot.Select(j => (j * world).Translation).ToList(), prefab);
+        return new CropSpawner($"{plot.Site.Id}/{prefab.Name}", world, prefab.JointsToRoot.Select(j => (j * world).Translation).ToList(), prefab) { Script = prefab.Script };
     }
 
     /// <summary>What the plots' crops draw and collide with, in world coordinates, under "site/crop prefab/...".</summary>
@@ -95,7 +108,7 @@ public sealed class PlotCrops
         if (!ZoneExtractor.RootObjects(assets, scene).TryGetValue(rootName, out var root))
             return found;
         var worlds = new Dictionary<long, Matrix4x4>();
-        var spawners = new List<(string Path, long Go, SerializedObject Data)>();
+        var spawners = new List<(string Path, long Go, SerializedObject Data, bool ForceFirst)>();
         var stack = new Stack<(AssetRef Transform, Matrix4x4 Parent, string Path)>();
         stack.Push((root, Matrix4x4.Identity, ""));
         while (stack.Count > 0)
@@ -110,18 +123,21 @@ public sealed class PlotCrops
             worlds[t.GameObject.PathId] = world;
             foreach (var c in go.Components)
                 if (scripts.Follow(scene, c) is { Data: { ScriptClass: "SpawnResource", Data: { } data } })
-                    spawners.Add((path, t.GameObject.PathId, data));
+                    spawners.Add((path, t.GameObject.PathId, data, go.Components.Any(o => scripts.Follow(scene, o) is { Data.ScriptClass: "SpawnResourceForceFirstRipeness" })));
             foreach (var child in t.Children)
                 if (assets.Resolve(scene, child) is { } childRef)
                     stack.Push((childRef, world, path));
         }
-        foreach (var (path, go, data) in spawners)
+        foreach (var (path, go, data, forceFirst) in spawners)
         {
             var joints = JointObjects(scripts, scene, data).Where(worlds.ContainsKey).Select(j => worlds[j].Translation).ToList();
-            found.Add(new CropSpawner(path, worlds[go], joints));
+            found.Add(new CropSpawner(path, worlds[go], joints) { Script = new CropScript(scene, data, forceFirst) });
         }
         return found;
     }
+
+    private static bool ForcesFirstRipeness(GameScripts scripts, AssetRef gameObject) =>
+        scripts.Assets.Read(gameObject, GameObjectData.Read).Components.Any(c => scripts.Follow(gameObject.File, c) is { Data.ScriptClass: "SpawnResourceForceFirstRipeness" });
 
     private static (AssetRef Ref, SerializedObject Data)? SpawnResourceOf(GameScripts scripts, AssetRef gameObject)
     {
