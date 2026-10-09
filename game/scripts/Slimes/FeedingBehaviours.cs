@@ -64,6 +64,8 @@ public sealed class StalkPounce : SlimeBehaviour
 
     public override bool CanRethink => _mode == Mode.None;
 
+    /// <summary>What it is after now (for check reports).</summary>
+    public string? Prey => _target is Actor a ? a.Id : _target is null ? null : "PLAYER";
     /// <summary>Whether the slime is stalking now (this piece is in charge).</summary>
     public bool Active { get; private set; }
 

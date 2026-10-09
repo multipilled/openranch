@@ -29,7 +29,8 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
     public bool MayVanish { get; init; }
     public readonly Dictionary<string, object> Notes = [];
 
-    private const double DeadlineSeconds = 150;
+    private const double DeadlineSeconds = 120;
+    private double _activeSince = -1;
 
     public AbilityTrial(string name, string slimeId, Vector3? playerAt = null, string group = "abilities") : base(name, group)
     {
@@ -54,6 +55,7 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
         }
         Piece = piece;
         Piece.Fired += (_, line) => (LastLine, FiredAt) = (line, Time);
+        Slime.Transformed += (_, into) => Notes["became"] = into.Id;
         Setup?.Invoke(this);
         Outcome = $"waiting for {typeof(T).Name}";
     }
@@ -68,11 +70,11 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
             if (MayVanish && Piece.Fires > 0 && Verdict(this) is { } last)
                 Finish(last.Ok, last.Line);
             else
-                Finish(false, $"{_slimeId} is gone ({LastLine ?? "never fired"})");
+                Finish(false, $"{_slimeId} is gone ({LastLine ?? "never fired"}{(Notes.TryGetValue("became", out var b) ? $"; it turned into {b}" : "")})");
             return;
         }
         // A trial that can't finish gives the player back for the others.
-        if (Time > DeadlineSeconds)
+        if (_activeSince >= 0 && Time - _activeSince > DeadlineSeconds)
         {
             Finish(false, TimedOut());
             return;
@@ -81,6 +83,8 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
             HasPlayer = Zoo.HoldPlayer(this, Center + at);
         if (_playerAt is not null && !HasPlayer)
             return;
+        if (_activeSince < 0)
+            _activeSince = Time;
         if (Piece.Fires == 0)
         {
             Before?.Invoke(this);
@@ -93,7 +97,8 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
 
     public override string TimedOut() => !GodotObject.IsInstanceValid(Slime) ? Outcome
         : $"{Outcome}; {_slimeId} age {Slime.Age:F0} s doing {Slime.Doing}, {Slime.GlobalPosition.DistanceTo(Center):F1} m from the pen centre, " +
-          $"grounded={Slime.Grounded}, hunger {Slime.Sim.Hunger:F2}, fired {Piece?.Fires ?? 0}x, player held={HasPlayer}";
+          $"grounded={Slime.Grounded}, hunger {Slime.Sim.Hunger:F2}, fired {Piece?.Fires ?? 0}x, player held={HasPlayer}" +
+          (Slime.Behaviour<StalkPounce>()?.Prey is { } prey ? $", stalking {prey}" : "");
 
     private void Finish(bool ok, string line)
     {
@@ -323,19 +328,6 @@ public static class AbilityTrials
             Verdict = t => (t.Piece.DoesParkour && t.Piece.Feints > 0, $"{t.LastLine}; feinted {t.Piece.Feints} time(s) first (55-80 degrees)"),
         };
 
-        // The player is prey too, so it is held 60 m up, out of the tabby's 45 m reach.
-        yield return new AbilityTrial<Gather>("TABBY_CARRY", "TABBY_SLIME", new Vector3(0, 60, 0), group: "feeding")
-        {
-            Setup = t =>
-            {
-                t.Slime.Sim.Hunger = 0;
-                t.Place("POGO_FRUIT", t.Center + new Vector3(-2.5f, 0, 0));
-                t.Place("CARROT_VEGGIE", t.Center + new Vector3(4.5f, 0, 3f));
-            },
-            Before = t => t.Slime.Sim.Hunger = 0,
-            Verdict = t => (t.Piece.LastCarried is not null && t.Piece.LastCarryDistance > 1f, t.LastLine!),
-        };
-
         yield return new AbilityTrial<GoldRunner>("GOLD", "GOLD_SLIME", new Vector3(-5.5f, 0, 0), group: "feeding")
         {
             MayVanish = true,
@@ -392,5 +384,20 @@ public static class AbilityTrials
                         $"{t.LastLine}; {t.Piece.Bites} bite(s); away from {kind} it would poof after {t.Piece.HoursAllowed} h");
                 },
             };
+
+        // Last of the player's users: it needs the player far away the whole time.
+        // The player is prey too, so it is held 60 m up, out of the tabby's 45 m reach.
+        yield return new AbilityTrial<Gather>("TABBY_CARRY", "TABBY_SLIME", new Vector3(0, 60, 0), group: "feeding")
+        {
+            Setup = t =>
+            {
+                t.Slime.Sim.Hunger = 0;
+                t.Place("POGO_FRUIT", t.Center + new Vector3(-2.5f, 0, 0));
+                t.Place("CARROT_VEGGIE", t.Center + new Vector3(4.5f, 0, 3f));
+            },
+            Before = t => t.Slime.Sim.Hunger = 0,
+            Verdict = t => (t.Piece.LastCarried is not null && t.Piece.LastCarryDistance > 1f, t.LastLine!),
+        };
+
     }
 }
