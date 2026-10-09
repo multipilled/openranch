@@ -84,8 +84,10 @@ ranch as it was loaded and lays over it what the running world changed; the game
   the game), the world time (the loaded time plus the game hours the clock has run since), and every
   actor the world holds: position, rotation, type, and for slimes hunger and agitation.
 - **Actors.** A saved actor the world took in is written where it is now, in its saved place in the
-  list; one that left the game (eaten, sold, sucked up) is dropped. Saved actors the world never took
-  in (outside the corrals, or with no prefab yet) are written as saved. An actor that appeared in play
+  list; one that left the game (eaten, sold, sucked up) is dropped. The loader tells the writer the
+  save's id of every actor it put into the world (corral slimes and the zone's loose actors), so each
+  is written once. Saved actors the world never took in (outside the zone, or with no prefab yet) are
+  written as saved. An actor that appeared in play
   gets the next free id, the way the original numbers them: dynamic ids start at 100 and loading an
   actor moves the next id past it (static analysis of the original's actor registry). Its region set
   is the player's, and the timers the world doesn't model stay 0, the value the original's actor

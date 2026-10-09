@@ -28,15 +28,30 @@ public sealed record PlotRegion(string Class, Matrix4x4 ToRoot, Vector3 Center, 
 
 /// <summary>
 /// One plot type's prefab, as the zone builder draws it: what it renders and collides with, relative
-/// to the plot's root, plus its corral regions.
+/// to the plot's root, plus its corral regions, all as the prefab itself has them (no upgrades). The
+/// <see cref="Tree"/> keeps the switched-off objects too, and <see cref="Upgraders"/> the scripts
+/// that switch them when upgrades are bought (<see cref="PlotUpgrades"/>).
 /// </summary>
 public sealed record PlotPrefab(int Type, string Name, IReadOnlyList<RenderItem> Renderers, IReadOnlyList<ColliderItem> Colliders,
-    IReadOnlyList<PlotRegion> Regions);
+    IReadOnlyList<PlotRegion> Regions)
+{
+    public PrefabTree? Tree { get; init; }
+    public IReadOnlyList<PlotUpgrader> Upgraders { get; init; } = [];
+}
 
 /// <summary>A plot as loaded from a save, standing on its site.</summary>
 public sealed record PlacedPlot(PlotSite Site, Plot Plot, PlotPrefab Prefab)
 {
+    /// <summary>What the plot's saved upgrades switch on its prefab; nothing when placed without the game's names.</summary>
+    public UpgradeResult Upgrades { get; init; } = new(new Dictionary<long, bool>(), [], []);
+
     public bool Contains(Vector3 unityPoint) => Prefab.Regions.Any(r => r.Contains(Site.PlotWorld, unityPoint));
+
+    /// <summary>The renderers of the plot with its upgrades applied, relative to the plot's root.</summary>
+    public IEnumerable<RenderItem> Renderers => Prefab.Tree?.RenderersOn(Upgrades.Switched) ?? Prefab.Renderers;
+
+    /// <summary>The colliders of the plot with its upgrades applied, relative to the plot's root.</summary>
+    public IEnumerable<ColliderItem> Colliders => Prefab.Tree?.CollidersOn(Upgrades.Switched) ?? Prefab.Colliders;
 }
 
 /// <summary>
@@ -74,24 +89,30 @@ public sealed class PlotLayout
     /// <summary>
     /// The plots of <paramref name="ranch"/> on this area's sites, in site order. A site the save
     /// doesn't list keeps the scene's own plot; a plot type with no prefab (the enum's "none") stands
-    /// for nothing and is left out.
+    /// for nothing and is left out. With <paramref name="names"/>, each plot's saved upgrades switch
+    /// its prefab's upgrade objects (<see cref="PlotUpgrades"/>).
     /// </summary>
-    public IReadOnlyList<PlacedPlot> Place(RanchState ranch)
+    public IReadOnlyList<PlacedPlot> Place(RanchState ranch, IGameNames? names = null)
     {
         var placed = new List<PlacedPlot>();
         foreach (var site in Sites)
         {
             var plot = ranch.FindPlot(site.Id) ?? new Plot { Id = site.Id, Type = site.SceneType };
-            if (Prefabs.TryGetValue(plot.Type, out var prefab))
-                placed.Add(new PlacedPlot(site, plot, prefab));
+            if (!Prefabs.TryGetValue(plot.Type, out var prefab))
+                continue;
+            var p = new PlacedPlot(site, plot, prefab);
+            if (names is not null)
+                p = p with { Upgrades = PlotUpgrades.Apply(prefab.Upgraders, plot.Upgrades, names) };
+            placed.Add(p);
         }
         return placed;
     }
 
     /// <summary>
     /// The scene's plot objects to hide (for <see cref="WorldState.Hidden"/>) and what the saved plots
-    /// draw and collide with in their place, in world coordinates. Every site's scene plot is hidden:
-    /// the plot on it is always built from its type's prefab, as the game does when it loads a save.
+    /// draw and collide with in their place, in world coordinates, upgrades applied. Every site's scene
+    /// plot is hidden: the plot on it is always built from its type's prefab, as the game does when it
+    /// loads a save.
     /// </summary>
     public (HashSet<long> Hidden, List<RenderItem> Renderers, List<ColliderItem> Colliders) Build(IReadOnlyList<PlacedPlot> plots)
     {
@@ -101,8 +122,8 @@ public sealed class PlotLayout
         foreach (var p in plots)
         {
             var path = $"{p.Site.Id}/{p.Prefab.Name}";
-            renderers.AddRange(p.Prefab.Renderers.Select(r => r with { Path = $"{path}/{r.Path}", World = r.World * p.Site.PlotWorld }));
-            colliders.AddRange(p.Prefab.Colliders.Select(c => c with { Path = $"{path}/{c.Path}", World = c.World * p.Site.PlotWorld }));
+            renderers.AddRange(p.Renderers.Select(r => r with { Path = $"{path}/{r.Path}", World = r.World * p.Site.PlotWorld }));
+            colliders.AddRange(p.Colliders.Select(c => c with { Path = $"{path}/{c.Path}", World = c.World * p.Site.PlotWorld }));
         }
         return (hidden, renderers, colliders);
     }
@@ -165,86 +186,14 @@ public sealed class PlotLayout
         return prefabs;
     }
 
-    // Walks a plot prefab the way the zone extractor walks the scene: active objects only, the most
-    // detailed level of each LODGroup, solid colliders; trigger boxes of CorralRegion scripts are kept
-    // as regions. The root's own transform is left out: the site places the plot.
+    // The prefab as it stands, plus its switched-off objects and its upgrader scripts.
     private static PlotPrefab ReadPrefab(GameScripts scripts, int type, AssetRef root)
     {
-        var assets = scripts.Assets;
-        var renderers = new List<RenderItem>();
-        var colliders = new List<ColliderItem>();
-        var regions = new List<PlotRegion>();
-        var lowerLods = new HashSet<long>();
-        var objects = new List<(AssetRef Go, GameObjectData Data, Matrix4x4 ToRoot, string Path)>();
-
-        var rootGo = assets.Read(root, GameObjectData.Read);
-        var stack = new Stack<(AssetRef, Matrix4x4, string, bool)>();
-        stack.Push((root, Matrix4x4.Identity, rootGo.Name, true));
-        while (stack.Count > 0)
+        var tree = PrefabTree.Read(scripts, root);
+        return new PlotPrefab(type, tree.Name, tree.RenderersOn().ToList(), tree.CollidersOn().ToList(), tree.RegionsOn().ToList())
         {
-            var (goRef, parent, path, isRoot) = stack.Pop();
-            var go = assets.Read(goRef, GameObjectData.Read);
-            if (!go.IsActive)
-                continue;
-            var transformRef = go.Components.Select(c => assets.Resolve(goRef.File, c)).FirstOrDefault(c => c?.ClassId == UnityClassId.Transform);
-            if (transformRef is null)
-                continue;
-            var t = assets.Read(transformRef.Value, TransformData.Read);
-            var toRoot = isRoot ? Matrix4x4.Identity : t.LocalMatrix * parent;
-            objects.Add((goRef, go, toRoot, path));
-            foreach (var childPtr in t.Children)
-            {
-                if (assets.Resolve(goRef.File, childPtr) is not { } childT
-                    || assets.Resolve(childT.File, assets.Read(childT, TransformData.Read).GameObject) is not { } childGo)
-                    continue;
-                stack.Push((childGo, toRoot, path + "/" + assets.Read(childGo, GameObjectData.Read).Name, false));
-            }
-            foreach (var c in go.Components)
-                if (assets.Resolve(goRef.File, c) is { ClassId: UnityClassId.LodGroup } lod)
-                    foreach (var level in assets.Read(lod, LodGroupData.Read).Lods.Skip(1))
-                        foreach (var r in level.Renderers)
-                            lowerLods.Add(r.PathId);
-        }
-
-        foreach (var (goRef, go, toRoot, path) in objects)
-        {
-            var file = goRef.File;
-            var components = go.Components.Select(c => assets.Resolve(file, c)).OfType<AssetRef>().ToList();
-            var filter = components.Where(c => c.ClassId == UnityClassId.MeshFilter).Select(c => assets.Read(c, MeshFilterData.Read)).FirstOrDefault();
-            var isCorralRegion = components.Any(c => c.ClassId == UnityClassId.MonoBehaviour && scripts.Reader.Read(c) is { Enabled: true, ScriptClass: "CorralRegion" });
-            foreach (var comp in components)
-            {
-                switch (comp.ClassId)
-                {
-                    case UnityClassId.MeshRenderer when filter is not null:
-                    {
-                        var r = assets.Read(comp, RendererData.Read);
-                        if (!r.Enabled || lowerLods.Contains(comp.PathId) || assets.Resolve(file, filter.Mesh) is not { } mesh)
-                            continue;
-                        var materials = r.Materials.Select(m => assets.Resolve(file, m)).ToList();
-                        renderers.Add(new RenderItem(path, toRoot, mesh, 0, -1, materials, false, r.CastShadows, go.Layer));
-                        break;
-                    }
-                    case UnityClassId.BoxCollider or UnityClassId.SphereCollider or UnityClassId.CapsuleCollider or UnityClassId.MeshCollider:
-                    {
-                        var col = assets.Read(comp, x => ColliderData.Read(x, comp.ClassId));
-                        if (!col.Enabled)
-                            continue;
-                        if (col.IsTrigger)
-                        {
-                            if (isCorralRegion && col.Shape == ColliderShape.Box)
-                                regions.Add(new PlotRegion("CorralRegion", toRoot, col.Center, col.Size));
-                            continue;
-                        }
-                        var mesh = col.Shape == ColliderShape.Mesh ? assets.Resolve(file, col.Mesh) : null;
-                        if (col.Shape == ColliderShape.Mesh && mesh is null)
-                            continue;
-                        colliders.Add(new ColliderItem(path, toRoot, col, mesh, go.Layer));
-                        break;
-                    }
-                }
-            }
-        }
-        return new PlotPrefab(type, rootGo.Name, renderers, colliders, regions);
+            Tree = tree,
+            Upgraders = PlotUpgrades.Read(scripts, root),
+        };
     }
 }
