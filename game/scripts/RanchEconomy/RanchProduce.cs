@@ -92,7 +92,13 @@ public partial class RanchProduce : Node
         return t;
     }
 
-    public override void _PhysicsProcess(double delta)
+    public override void _PhysicsProcess(double delta) => CatchUp();
+
+    /// <summary>
+    /// Brings everything growing up to the world clock now. Saving calls it first: the clock may have moved
+    /// on since the last physics frame (a fast night's sleep can pass within one frame).
+    /// </summary>
+    public void CatchUp()
     {
         // The loader puts the save's actors into the world a frame after the economy is made.
         if (!_started)

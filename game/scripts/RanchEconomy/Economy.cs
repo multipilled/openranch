@@ -60,9 +60,12 @@ public partial class Economy : Node3D
             writer.Timers = Produce.TimersOf;
             writer.Unsaved = Produce.Unsaved;
             writer.Crops = Produce.CropClocks;
+            // The clock may have moved on since the last physics frame (a fast night can pass in one): catch up first.
+            writer.BeforeWrite += () => Produce.CatchUp();
             // Silos, feeders, plort collectors and the incinerator (RanchMachines.cs).
             Machines = new RanchMachines(this);
             AddChild(Machines);
+            writer.BeforeWrite += () => Machines.CatchUp();
         }
         catch (Exception e) when (Array.IndexOf(args, "--m6-check") >= 0)
         {

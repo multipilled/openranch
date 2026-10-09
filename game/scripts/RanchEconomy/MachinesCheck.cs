@@ -56,7 +56,10 @@ public sealed class MachinesCheck(M6Check check, Economy economy)
 
     private async Task Corral(string siteId)
     {
-        if (!Buy(siteId, "FEEDER") || !Buy(siteId, "PLORT_COLLECTOR"))
+        if (!Buy(siteId, "FEEDER"))
+            return;
+        var boughtAt = Now;
+        if (!Buy(siteId, "PLORT_COLLECTOR"))
             return;
         await check.Frames(2);
         var site = economy.Plots.Get(siteId)!;
@@ -72,14 +75,13 @@ public sealed class MachinesCheck(M6Check check, Economy economy)
         }
         await check.Frames(2);
         var started = plot.Feeder.NextTime;
-        var startedAt = Now;
         var thrown = 0;
         for (var i = 0; i < 3; i++)
             if (await Throw(site, hopper.Trigger, "CARROT_VEGGIE"))
                 thrown++;
         var stored = plot.Silo.GetValueOrDefault(food.Kind)?.Sum(s => s.Count) ?? 0;
         var hours = feeder.Hours(plot.Feeder.Speed);
-        check.Check(thrown == 3 && stored == 3 && Math.Abs(started - (startedAt + hours * 3600)) <= Frame * 2,
+        check.Check(thrown == 3 && stored == 3 && started - (boughtAt + hours * 3600) >= 0 && started - (boughtAt + hours * 3600) <= Frame * 4,
             $"3 carrots thrown into the feeder's hopper: {stored} stored; the feeder first feeds {hours} h after it was bought (speed {economy.Names.Name(GameEnum.FeedSpeed, plot.Feeder.Speed)})");
         var fedBefore = Machines.Log.Count(l => l.Site == siteId && l.What == "fed");
         var fed = await check.Until(() => Machines.Log.Count(l => l.Site == siteId && l.What == "fed") - fedBefore >= 3, hours * 3600 / (Frame * Engine.PhysicsTicksPerSecond) + 10);

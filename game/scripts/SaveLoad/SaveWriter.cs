@@ -98,6 +98,9 @@ public partial class SaveWriter : Node
     /// <summary>Actors in the world the original doesn't save (rotten produce), left out of the save.</summary>
     public System.Func<Slimes.Actor, bool>? Unsaved { get; set; }
 
+    /// <summary>Called before each write, to bring what the world runs up to the clock.</summary>
+    public event System.Action? BeforeWrite;
+
     /// <summary>Every crop's clock now, when the world runs them.</summary>
     public System.Func<IReadOnlyList<CropTimes>>? Crops { get; set; }
 
@@ -162,6 +165,7 @@ public partial class SaveWriter : Node
     {
         try
         {
+            BeforeWrite?.Invoke();
             var ranch = Snapshot(out var counts);
             RanchSave.WriteFile(path, ranch);
             GD.Print($"Saved {path}: {ranch.Player.Money} money, day {ranch.Clock.Day} {ranch.Clock.Hour:F2} h, " +

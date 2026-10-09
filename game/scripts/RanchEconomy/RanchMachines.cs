@@ -126,7 +126,10 @@ public partial class RanchMachines : Node
         return true;
     }
 
-    public override void _PhysicsProcess(double delta)
+    public override void _PhysicsProcess(double delta) => CatchUp();
+
+    /// <summary>Runs the machines up to the world clock now (saving calls it first, as for produce).</summary>
+    public void CatchUp()
     {
         var now = Now;
         foreach (var site in Plots.Sites)
@@ -227,8 +230,11 @@ public partial class RanchMachines : Node
             return;
         foreach (var actor in _economy.M2.Catalog.Live.Where(a => a.Vacuumable && a.CaughtBy is null && store.Takes(a.Id)).ToList())
         {
+            // The collector's area is a trigger: a plort counts once its collider touches it, not only its middle.
             var p = actor.GlobalPosition;
-            if (!area.Region.Contains(site.Info.PlotWorld, new N.Vector3(p.X, p.Y, -p.Z)))
+            var r = actor.Radius;
+            if (!new[] { Vector3.Zero, Vector3.Right, Vector3.Left, Vector3.Up, Vector3.Down, Vector3.Forward, Vector3.Back }
+                    .Any(d => area.Region.Contains(site.Info.PlotWorld, new N.Vector3(p.X + d.X * r, p.Y + d.Y * r, -(p.Z + d.Z * r)))))
                 continue;
             if (!store.TryAdd(Slots(plot, store), ItemNumber(actor.Id), actor.Id))
                 continue;
