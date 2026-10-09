@@ -4,13 +4,14 @@ using OpenRanch.Formats.Unity.Managed;
 
 namespace OpenRanch.Formats.Game;
 
-/// <summary>A prefab's Rigidbody: mass and the two drags (the flags after them aren't needed).</summary>
-public sealed record RigidbodyData(float Mass, float Drag, float AngularDrag)
+/// <summary>A prefab's Rigidbody: mass, the two drags, and whether gravity pulls it and physics moves it at all.</summary>
+public sealed record RigidbodyData(float Mass, float Drag, float AngularDrag, bool UseGravity = true, bool IsKinematic = false)
 {
     public static RigidbodyData Read(EndianReader r)
     {
         PPtr.Read(r); // game object
-        return new RigidbodyData(r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+        var (mass, drag, angularDrag) = (r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+        return new RigidbodyData(mass, drag, angularDrag, r.ReadBool(), r.ReadBool());
     }
 }
 
@@ -49,8 +50,8 @@ public sealed record SkinnedMeshRendererData(RendererData Renderer, PPtr Mesh, L
 public sealed record PrefabMesh(string Path, Matrix4x4 ToRoot, AssetRef Mesh, IReadOnlyList<AssetRef?> Materials, bool Skinned,
     IReadOnlyList<AssetRef> FaceLayers);
 
-/// <summary>A collider of a prefab, placed relative to the root like <see cref="PrefabMesh"/>.</summary>
-public sealed record PrefabCollider(string Path, Matrix4x4 ToRoot, ColliderData Collider, PhysicMaterialData? Material = null);
+/// <summary>A collider of a prefab, placed relative to the root like <see cref="PrefabMesh"/>. A mesh collider names its mesh (<see cref="Mesh"/>).</summary>
+public sealed record PrefabCollider(string Path, Matrix4x4 ToRoot, ColliderData Collider, PhysicMaterialData? Material = null, AssetRef? Mesh = null);
 
 /// <summary>
 /// A physic material (Unity class 134): frictions, bounciness and how each is combined with the other
@@ -151,6 +152,17 @@ public sealed class ItemPrefabs
                     roots.TryAdd(ids.NameOf(Convert.ToInt64(identifiable.Data.Data!["id"])), goRef);
             }
         }
+
+        // Gordos are listed apart (the LookupDirector's gordoEntries), each named by its GordoIdentifiable.
+        if (lookup.Data["gordoEntries"] is PPtr gordoPtr && scripts.Follow(lookupRef.File, gordoPtr) is { } gordos)
+            foreach (var item in gordos.Data.Data!.List("items").OfType<PPtr>())
+            {
+                if (assets.Resolve(gordos.Ref.File, item) is not { ClassId: UnityClassId.GameObject } goRef)
+                    continue;
+                foreach (var c in assets.Read(goRef, GameObjectData.Read).Components)
+                    if (scripts.Follow(goRef.File, c) is { Data.ScriptClass: "GordoIdentifiable" } identifiable)
+                        roots.TryAdd(ids.NameOf(Convert.ToInt64(identifiable.Data.Data!["id"])), goRef);
+            }
         return new ItemPrefabs(scripts, roots);
     }
 
@@ -174,7 +186,14 @@ public sealed class ItemPrefabs
                         if (assets.Resolve(c.File, r) is { } rr)
                             lowerLods.Add((rr.File.Path, rr.PathId));
 
-        foreach (var (goRef, toRoot) in Objects(root, fullRootTransform: false))
+        // Bones are transforms; a skinned mesh is drawn where its bones put it (below).
+        var objects = Objects(root, fullRootTransform: false).ToList();
+        var transforms = new Dictionary<(string, long), Matrix4x4>();
+        foreach (var (goRef, toRoot) in objects)
+            if (Components(goRef).FirstOrDefault(c => c.ClassId == UnityClassId.Transform) is { PathId: not 0 } t)
+                transforms[(t.File.Path, t.PathId)] = toRoot;
+
+        foreach (var (goRef, toRoot) in objects)
         {
             placed[(goRef.File.Path, goRef.PathId)] = toRoot;
             var go = assets.Read(goRef, GameObjectData.Read);
@@ -203,14 +222,15 @@ public sealed class ItemPrefabs
                         var r = assets.Read(c, SkinnedMeshRendererData.Read);
                         var materials = r.Renderer.Materials.Select(m => assets.Resolve(c.File, m)).ToList();
                         if (r.Renderer.Enabled && !OnlyDefaultMaterial(materials) && assets.Resolve(c.File, r.Mesh) is { } mesh)
-                            meshes.Add(new PrefabMesh(path, toRoot, mesh, materials, true, []));
+                            meshes.Add(new PrefabMesh(path, BindPlacement(c.File, r, mesh, transforms) ?? toRoot, mesh, materials, true, []));
                         break;
                     }
                     case UnityClassId.BoxCollider or UnityClassId.SphereCollider or UnityClassId.CapsuleCollider or UnityClassId.MeshCollider:
                     {
                         var col = assets.Read(c, x => ColliderData.Read(x, c.ClassId));
                         if (col.Enabled)
-                            colliders.Add(new PrefabCollider(path, toRoot, col, PhysicMaterialData.Of(assets, c)));
+                            colliders.Add(new PrefabCollider(path, toRoot, col, PhysicMaterialData.Of(assets, c),
+                                col.Shape == ColliderShape.Mesh ? assets.Resolve(c.File, col.Mesh) : null));
                         break;
                     }
                     case UnityClassId.MonoBehaviour:
@@ -230,6 +250,24 @@ public sealed class ItemPrefabs
 
         var palette = AddSlimeAppearance(root, scripts, placed, meshes);
         return new ItemPrefab(id, rootGo.Name, body, vacuumSize, meshes, colliders, scripts, palette);
+    }
+
+    // Where a skinned mesh sits in its bind pose: its root bone's bind pose (mesh to bone), then the
+    // bone's place under the prefab root. Unity draws skinned meshes by their bones, not by the
+    // renderer's own object, which may be scaled differently (the pink gordo's is a quarter size).
+    private Matrix4x4? BindPlacement(SerializedFile file, SkinnedMeshRendererData r, AssetRef mesh, Dictionary<(string, long), Matrix4x4> transforms)
+    {
+        var assets = _scripts.Assets;
+        var bindPoses = assets.Read(mesh, MeshData.Read).BindPoses;
+        if (bindPoses.Count == 0 || r.Bones.Count == 0)
+            return null;
+        var rootRef = assets.Resolve(file, r.RootBone);
+        var index = rootRef is { } rr ? r.Bones.FindIndex(b => assets.Resolve(file, b) is { } br && br.Equals(rr)) : -1;
+        index = Math.Max(0, index);
+        if (index >= bindPoses.Count || assets.Resolve(file, r.Bones[index]) is not { } bone
+            || !transforms.TryGetValue((bone.File.Path, bone.PathId), out var boneToRoot))
+            return null;
+        return bindPoses[index] * boneToRoot;
     }
 
     // Slime prefabs carry no body model: their SlimeAppearanceApplicator names the slime definition,
