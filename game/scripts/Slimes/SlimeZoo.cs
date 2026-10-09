@@ -191,7 +191,7 @@ public partial class SlimeZoo : Node3D
         _player.SetPhysicsProcess(false);
         Vector3 eye, target;
         if (_focus is not null && _pens.FirstOrDefault(p => p.Slime == _focus) is { } pen)
-            (eye, target) = (pen.Center + new Vector3(0, 3.2f, 4.2f), pen.Center + Vector3.Up * 0.5f);
+            (eye, target) = (pen.Center + new Vector3(1.2f, 4f, -3.6f), pen.Center + Vector3.Up * 0.5f); // slimes face -Z
         else
             (eye, target) = (center + new Vector3(0, Math.Max(width, depth) * 0.75f, depth * 0.85f), center);
         _player.GlobalPosition = eye - (_player.Camera.GlobalPosition - _player.GlobalPosition);

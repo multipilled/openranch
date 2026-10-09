@@ -164,6 +164,8 @@ public sealed class ItemCatalog
                 for (var s = 0; s < subMeshes; s++)
                 {
                     var material = part.Materials.Count == 0 ? null : part.Materials[Math.Min(s, part.Materials.Count - 1)];
+                    if (IsTransparentEffect(material))
+                        continue;
                     var mesh = World.BuildMesh(part.Mesh, [(s, material)], mirrored: false);
                     if (mesh.GetSurfaceCount() == 0)
                         continue;
@@ -175,6 +177,12 @@ public sealed class ItemCatalog
         }
         return (Node3D)template.Duplicate();
     }
+
+    // A material set to draw in Unity's transparent range (render queue above 2500), such as the rad
+    // slime's aura shell (4001). openranch leaves these out for now: drawn opaque they hide the slime,
+    // and its full-screen fog pass erases transparent objects anyway (UNVERIFIED.md).
+    private bool IsTransparentEffect(AssetRef? materialRef) =>
+        materialRef is { ClassId: UnityClassId.Material } m && Scripts.Assets.Read(m, MaterialData.Read).CustomRenderQueue > 2500;
 
     // Slime bodies and plorts get the gradient stand-in; everything else goes through the world's
     // material conversion. Face layers (eyes, mouth) are drawn as further passes over the body.
