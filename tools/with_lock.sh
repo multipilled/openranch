@@ -4,7 +4,8 @@
 # repo (the lock lives next to the common .git directory). Generalized from the DI2 project.
 #   tools/with_lock.sh <session-name> <command...>      LOCK_NAME=<name> picks a different lock (default game)
 # A lock older than 40 minutes is treated as stale (crashed holder) and removed.
-common=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$PWD/.git")
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+common=$(git -C "$here" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || echo "$here/../.git")
 LOCK="$(dirname "$common")/.locks/${LOCK_NAME:-game}"
 mkdir -p "$(dirname "$LOCK")"
 owner="$1"; shift
