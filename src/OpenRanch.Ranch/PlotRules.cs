@@ -15,6 +15,14 @@ public enum PlotPurchase
     NotEnoughMoney,
 }
 
+/// <summary>Where the money for a purchase comes from: the running world's wallet, or the ranch's own money when none is given.</summary>
+public interface IPurse
+{
+    int Money { get; }
+    /// <summary>Takes <paramref name="amount"/> if there is that much; returns whether it did.</summary>
+    bool TrySpend(int amount);
+}
+
 /// <summary>
 /// Buying at a plot: building on an empty plot, demolishing, and upgrades. Prices and what each
 /// plot type sells come from the install (<see cref="PlotCatalog"/>); the few rules that live only in
@@ -52,15 +60,15 @@ public sealed class PlotRules
     /// building on an empty plot, or demolishing a built one back to empty. What is built starts
     /// fresh: no upgrades, nothing stored, nothing planted.
     /// </summary>
-    public PlotPurchase Replace(RanchState ranch, string plotId, int type)
+    public PlotPurchase Replace(RanchState ranch, string plotId, int type, IPurse? purse = null)
     {
         if (ranch.FindPlot(plotId) is not { } plot)
             return PlotPurchase.NoSuchPlot;
         if (_catalog.Menu(plot.Type)?.Replacements.FirstOrDefault(r => r.Type == type) is not { } offer)
             return PlotPurchase.NotOffered;
-        if (!Pay(ranch, offer.Cost))
+        if (!Pay(ranch, offer.Cost, purse))
             return PlotPurchase.NotEnoughMoney;
-        ranch.Plots[ranch.Plots.IndexOf(plot)] = new Plot { Id = plot.Id, Type = type };
+        ranch.Plots[ranch.Plots.IndexOf(plot)] = new Plot { Id = plot.Id, Type = type, AttachedResource = NoCrop };
         return PlotPurchase.Done;
     }
 
@@ -80,13 +88,13 @@ public sealed class PlotRules
         return PlotPurchase.Done;
     }
 
-    public PlotPurchase Upgrade(RanchState ranch, string plotId, int upgrade)
+    public PlotPurchase Upgrade(RanchState ranch, string plotId, int upgrade, IPurse? purse = null)
     {
         var allowed = CanUpgrade(ranch, plotId, upgrade);
         if (allowed != PlotPurchase.Done)
             return allowed;
         var plot = ranch.FindPlot(plotId)!;
-        if (!Pay(ranch, _catalog.Upgrade(plot.Type, upgrade)!.Cost))
+        if (!Pay(ranch, _catalog.Upgrade(plot.Type, upgrade)!.Cost, purse))
             return PlotPurchase.NotEnoughMoney;
         plot.Upgrades.Add(upgrade);
         return PlotPurchase.Done;
@@ -107,8 +115,32 @@ public sealed class PlotRules
             .FirstOrDefault(u => _names.Name(GameEnum.PlotUpgrade, u!.Value) == earlierName);
     }
 
-    private static bool Pay(RanchState ranch, int cost)
+    /// <summary>The menu item of the garden's menu that clears its crop (static analysis: GardenUI's clearCrop item destroys the attached crop).</summary>
+    public const string ClearCropItem = "clearCrop";
+
+    // The "nothing planted" value of SpawnResource.Id, which a fresh plot holds.
+    private int NoCrop => _names.Value(GameEnum.SpawnResource, "NONE");
+
+    /// <summary>Clears the crop planted on the plot, for the price its menu asks (the garden's "clearCrop" item).</summary>
+    public PlotPurchase ClearCrop(RanchState ranch, string plotId, IPurse? purse = null)
     {
+        if (ranch.FindPlot(plotId) is not { } plot)
+            return PlotPurchase.NoSuchPlot;
+        if (_catalog.Menu(plot.Type)?.OtherCosts is not { } costs || !costs.TryGetValue(ClearCropItem, out var cost))
+            return PlotPurchase.NotOffered;
+        if (plot.AttachedResource == NoCrop)
+            return PlotPurchase.AlreadyOwned;
+        if (!Pay(ranch, cost, purse))
+            return PlotPurchase.NotEnoughMoney;
+        plot.AttachedResource = NoCrop;
+        plot.AttachedDeathTime = 0;
+        return PlotPurchase.Done;
+    }
+
+    private static bool Pay(RanchState ranch, int cost, IPurse? purse)
+    {
+        if (purse is not null)
+            return purse.TrySpend(cost);
         if (ranch.Player.Money < cost)
             return false;
         ranch.Player.Money -= cost;

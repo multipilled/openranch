@@ -66,17 +66,20 @@ public partial class M3Check : Node
             report.AppendLine($"  {(ok ? "ok  " : "FAIL")} {what}");
         }
 
+        // What the zone draws: the zone itself and the plots in play, built site by site (RanchEconomy).
+        var renderers = _zone.Renderers.Concat(_saved.LiveRenderers?.Invoke() ?? []).ToList();
+
         // Plots: the save reader's type for each of the zone's sites, against what the built zone holds.
         var siteIds = _saved.Plots.Select(p => p.Site.Id).ToHashSet();
         var expected = ranch.Plots.Where(p => siteIds.Contains(p.Id))
             .GroupBy(p => _names.PlotType(p.Type)).ToDictionary(g => g.Key, g => g.Count());
         var prefabTypes = _saved.Plots.Select(p => p.Prefab).DistinctBy(p => p.Name).ToDictionary(p => p.Name, p => p.Type);
-        var built = _zone.Renderers.Select(r => r.Path.Split('/'))
+        var built = renderers.Select(r => r.Path.Split('/'))
             .Where(parts => parts.Length > 2 && siteIds.Contains(parts[0]) && prefabTypes.ContainsKey(parts[1]))
             .Select(parts => (Site: parts[0], Type: prefabTypes[parts[1]])).Distinct()
             .GroupBy(s => _names.PlotType(s.Type)).ToDictionary(g => g.Key, g => g.Count());
         Check(siteIds.Count > 0 && Same(expected, built), $"plots on the zone's {siteIds.Count} sites: built {Describe(built)}; save {Describe(expected)}");
-        var leftovers = _zone.Renderers.Count(r => r.Path.Contains("/landPlot/"));
+        var leftovers = renderers.Count(r => r.Path.Contains("/landPlot/"));
         Check(leftovers == 0, $"scene plots left standing: {leftovers} meshes");
 
         // Each plot has ground under its middle, at the site's height. Some plots stand something on
@@ -104,7 +107,7 @@ public partial class M3Check : Node
         // A second, independent read of the save for the plots' upgrades, crops and contents and the loose actors.
         var reader = RanchFiles.Read(_saved.FilePath);
         Plot SavedPlot(PlacedPlot p) => reader.FindPlot(p.Site.Id) ?? p.Plot;
-        var pathsBySite = _zone.Renderers.Select(r => r.Path).GroupBy(p => p.Split('/')[0]).ToDictionary(g => g.Key, g => g.ToList());
+        var pathsBySite = renderers.Select(r => r.Path).GroupBy(p => p.Split('/')[0]).ToDictionary(g => g.Key, g => g.ToList());
 
         // Upgrades: every object an upgrader of the plot points at is drawn exactly as the save's upgrades say.
         var upgradeWrong = new List<string>();
@@ -147,7 +150,7 @@ public partial class M3Check : Node
             .ToDictionary(c => c.Name, c => _names.Name(GameEnum.SpawnResource, c.Id));
         var cropsWanted = _saved.Plots.Where(p => SavedPlot(p).AttachedResource != none)
             .Select(p => $"{p.Site.Id} {_names.Name(GameEnum.SpawnResource, SavedPlot(p).AttachedResource)}").ToHashSet();
-        var cropsBuilt = _zone.Renderers.Select(r => r.Path.Split('/'))
+        var cropsBuilt = renderers.Select(r => r.Path.Split('/'))
             .Where(parts => parts.Length > 2 && siteIds.Contains(parts[0]) && cropByPrefab.ContainsKey(parts[1]))
             .Select(parts => $"{parts[0]} {cropByPrefab[parts[1]]}").ToHashSet();
         Check(cropsWanted.SetEquals(cropsBuilt),
@@ -176,7 +179,8 @@ public partial class M3Check : Node
         var looseWanted = Count(reader.Actors.Where(_saved.Zone.Contains).Select(a => _names.Item(a.TypeId))
             .Where(id => Items.KindOf(id) is not (ItemKind.Slime or ItemKind.Largo)));
         var looseSpawned = Count(_saved.SpawnedLoose.Select(s => s.Saved.Id));
-        Check(looseWanted.Count > 0 && Same(looseWanted, looseSpawned),
+        // A new game saved before anything appeared has none.
+        Check((looseWanted.Count > 0 || reader.Actors.Count == 0) && Same(looseWanted, looseSpawned),
             $"loose actors in the zone: {looseSpawned.Values.Sum()} spawned ({Describe(looseSpawned)}); save {looseWanted.Values.Sum()}");
 
         // Produce on crops: the produce the save left growing hangs from its crop's joints, and stays there.

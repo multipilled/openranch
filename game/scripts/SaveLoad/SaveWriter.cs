@@ -116,10 +116,10 @@ public partial class SaveWriter : Node
         var kept = actors.Count(a => a.ActorId is not null);
         counts = (kept, actors.Count - kept, tracked.Count - kept);
 
-        // The player is written where they stand when the loader placed them from the save; a player
-        // who saved in another zone keeps the saved place.
+        // The player is written where they stand when the loader placed them from the save, or in a new
+        // game; a player who saved in another zone keeps the saved place.
         Vec3? playerAt = null, playerView = null;
-        if (_player is not null && _saved.Player is not null)
+        if (_player is not null && (_saved.Player is not null || _saved.FilePath.Length == 0))
         {
             var feet = Unity(_player.GlobalPosition);
             playerAt = new Vec3(feet.X, feet.Y, feet.Z);
@@ -135,8 +135,8 @@ public partial class SaveWriter : Node
             MoneyEarned = _earned,
             // The world clock (World/WorldTime.cs) moves the loaded ranch's world time itself.
             WorldTime = ranch.WorldTime,
-            // Plots stand as loaded: nothing in the world builds or upgrades them yet.
-            Plots = _saved.Plots.ToDictionary(p => p.Site.Id, p => new LivePlot(p.Plot.Type, p.Plot.Upgrades)),
+            // Plots, access doors and progress counters: the world changes the ranch's own (RanchEconomy
+            // builds, upgrades, plants and buys expansions on it), so they are written as the ranch holds them.
             MarketSaturation = _m2.Market.Saturations.Where(kv => TryType(kv.Key, out _))
                 .ToDictionary(kv => _names.Value(GameEnum.ItemId, kv.Key), kv => kv.Value),
             // The vacpack of normal play; a slime sucked up left the world and is kept here.

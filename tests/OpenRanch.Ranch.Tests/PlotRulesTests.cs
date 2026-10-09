@@ -20,6 +20,7 @@ public class PlotRulesTests
             [(GameEnum.PlotUpgrade, "DELUXE_COOP")] = 17,
             [(GameEnum.Progress, "OGDEN_REWARDS")] = 20,
             [(GameEnum.Progress, "MOCHI_REWARDS")] = 21,
+            [(GameEnum.SpawnResource, "NONE")] = 0,
         };
 
         public string Name(string label, long value) =>
@@ -135,5 +136,44 @@ public class PlotRulesTests
         Assert.Equal(Empty, ranch.Plots[0].Type);
         Assert.Empty(ranch.Plots[0].Upgrades);
         Assert.Empty(ranch.Plots[0].Silo); // what was stored is lost
+    }
+
+    private sealed class Purse(int money) : IPurse
+    {
+        public int Money { get; private set; } = money;
+
+        public bool TrySpend(int amount)
+        {
+            if (amount > Money)
+                return false;
+            Money -= amount;
+            return true;
+        }
+    }
+
+    [Fact]
+    public void A_purse_pays_instead_of_the_ranchs_own_money()
+    {
+        var ranch = Ranch(0);
+        var purse = new Purse(400);
+        Assert.Equal(PlotPurchase.Done, Rules.Replace(ranch, "a", Corral, purse));
+        Assert.Equal(PlotPurchase.NotEnoughMoney, Rules.Upgrade(ranch, "a", Walls, new Purse(149)));
+        Assert.Equal(PlotPurchase.Done, Rules.Upgrade(ranch, "a", Walls, purse));
+        Assert.Equal(0, purse.Money);
+        Assert.Equal(0, ranch.Player.Money);
+    }
+
+    [Fact]
+    public void Clearing_a_crop_costs_the_gardens_price()
+    {
+        var ranch = Ranch(1000);
+        Rules.Replace(ranch, "a", Garden);
+        Assert.Equal(PlotPurchase.AlreadyOwned, Rules.ClearCrop(ranch, "a")); // nothing planted
+        ranch.Plots[0].AttachedResource = 3;
+        ranch.Plots[0].AttachedDeathTime = 5000;
+        Assert.Equal(PlotPurchase.Done, Rules.ClearCrop(ranch, "a"));
+        Assert.Equal(0, ranch.Plots[0].AttachedResource);
+        Assert.Equal(1000 - 250 - 10, ranch.Player.Money);
+        Assert.Equal(PlotPurchase.NotOffered, Rules.ClearCrop(ranch, "b")); // the empty plot's menu has no such item
     }
 }
