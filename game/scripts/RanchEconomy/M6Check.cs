@@ -55,8 +55,7 @@ public partial class M6Check : Node
     {
         _report.AppendLine(line);
         if (_log is not null)
-            System.IO.File.AppendAllText(_log, $"{Time.GetTicksMsec() / 1000.0,8:F1}s {line}
-");
+            System.IO.File.AppendAllText(_log, $"{Time.GetTicksMsec() / 1000.0,8:F1}s {line}" + System.Environment.NewLine);
     }
 
     public override void _Ready() => Callable.From(() => { _ = Run(); }).CallDeferred();
