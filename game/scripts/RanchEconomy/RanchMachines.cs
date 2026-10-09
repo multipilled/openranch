@@ -126,7 +126,15 @@ public partial class RanchMachines : Node
         return true;
     }
 
-    public override void _PhysicsProcess(double delta) => CatchUp();
+    // Seconds of play (physics steps), for the machines' real-time pauses (SlimeFeeder and SiloCatcher wait on Unity's
+    // Time.time, game time that stops with the game and doesn't follow the world clock's speed).
+    private double _seconds;
+
+    public override void _PhysicsProcess(double delta)
+    {
+        _seconds += delta;
+        CatchUp();
+    }
 
     /// <summary>Runs the machines up to the world clock now (saving calls it first, as for produce).</summary>
     public void CatchUp()
@@ -152,7 +160,7 @@ public partial class RanchMachines : Node
         if (!site.Placed.Prefab.Tree!.IsOn(catcher.Trigger.Chain, site.Placed.Upgrades.Switched))
             return;
         var key = $"{site.Info.Id}/{catcher.Trigger.Object}";
-        var real = Time.GetTicksMsec() / 1000.0;
+        var real = _seconds;
         if (real < _nextEject.GetValueOrDefault(key))
             return;
         var world = catcher.Trigger.Region.ToRoot * site.Info.PlotWorld;
@@ -184,7 +192,7 @@ public partial class RanchMachines : Node
             plot.Feeder = rules.Start(plot.Feeder.Speed, now);
         plot.Feeder = rules.CatchUp(plot.Feeder, now);
         var id = site.Info.Id;
-        var real = Time.GetTicksMsec() / 1000.0;
+        var real = _seconds;
         if (plot.Feeder.PendingCount <= 0 || real < _nextEject.GetValueOrDefault(id))
             return;
         var store = Data.Stores.GetValueOrDefault(plot.Type)?.FirstOrDefault(s => s.KindName == "FOOD");

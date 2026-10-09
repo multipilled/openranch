@@ -202,7 +202,18 @@ public partial class WorldMap : Node3D
     }
 
     /// <summary>Freezes the actors under <paramref name="actors"/> that stand outside every loaded cell (see Hibernate).</summary>
-    public void Manage(Node actors) => _actors = actors;
+    public void Manage(Node actors)
+    {
+        _actors = actors;
+        // From the moment they appear: an actor spawned where nothing is built (a save's loose actors on The Ranch while
+        // the player is in the Desert) would otherwise fall for up to the 10 frames until the next Hibernate, and the
+        // save would write it sunk into the ground it then falls through on loading.
+        actors.ChildEnteredTree += child =>
+        {
+            if (child is Node3D actor && _player is not null)
+                actor.ProcessMode = IsLoadedAt(UnityPosition(actor.GlobalPosition)) ? ProcessModeEnum.Inherit : ProcessModeEnum.Disabled;
+        };
+    }
 
     private void MovePlayer(N.Vector3 unity, int set, float? yawDegrees, float pitchDegrees)
     {

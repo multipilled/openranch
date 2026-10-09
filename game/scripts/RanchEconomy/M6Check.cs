@@ -89,20 +89,17 @@ public partial class M6Check : Node
             await ToSignal(GetTree(), SceneTree.SignalName.PhysicsFrame);
     }
 
-    public async Task Seconds(double seconds)
-    {
-        var end = Time.GetTicksMsec() + seconds * 1000;
-        while (Time.GetTicksMsec() < end)
-            await Frames();
-    }
+    // Waits count physics steps, not the wall clock: a run on a busy machine takes longer but sees the same game.
+    private static double Step => 1.0 / Engine.PhysicsTicksPerSecond;
 
-    /// <summary>Waits (real seconds, at most <paramref name="timeout"/>) until <paramref name="done"/> holds; returns whether it did.</summary>
+    public async Task Seconds(double seconds) => await Frames((int)Math.Ceiling(seconds / Step));
+
+    /// <summary>Waits (physics seconds, at most <paramref name="timeout"/>) until <paramref name="done"/> holds; returns whether it did.</summary>
     public async Task<bool> Until(Func<bool> done, double timeout)
     {
-        var end = Time.GetTicksMsec() + timeout * 1000;
-        while (!done())
+        for (var waited = 0.0; !done(); waited += Step)
         {
-            if (Time.GetTicksMsec() > end)
+            if (waited > timeout)
                 return false;
             await Frames();
         }

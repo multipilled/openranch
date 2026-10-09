@@ -22,6 +22,7 @@ namespace OpenRanch.Game;
 ///   --save FILE                     open this save: an original v12 save or an openranch .ranch.json (plots,
 ///                                   corral slimes, money, ranch upgrades, time of day); read only
 ///   --m3-check                      with --save: check the ranch against the save reader, print a report, quit
+///   --joined-world                  run --m3-check, --slime-zoo or --m6-check in the joined world instead of The Ranch alone
 ///   --save-out FILE                 with --save: once the world has settled, write the live ranch to FILE
 ///                                   (.ranch.json), then quit (unless --m3-check runs); in play F5 saves
 ///   --screenshot FILE [--frames N]  save a screenshot after N frames (default 90), then quit
@@ -44,6 +45,13 @@ public partial class Ranch : Node3D
         string? Arg(string name) => Array.IndexOf(args, name) is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
         _screenshot = Arg("--screenshot");
         _framesLeft = int.TryParse(Arg("--frames"), out var f) ? f : 90;
+        if (Usage(args, Arg) is { } usage)
+        {
+            // A check without what it needs would never start and idle until the runner's timeout: quit at once.
+            GD.PrintErr(usage);
+            Callable.From(() => GetTree().Quit(2)).CallDeferred();
+            return;
+        }
 
         var install = Arg("--game") is { } dir ? GameInstall.Open(dir) : GameInstall.Find();
         if (install is null)
@@ -74,10 +82,12 @@ public partial class Ranch : Node3D
         TimedObjects timed;
         // Milestone 4: without --zone, every zone of the world scene, its cells loaded around the player (World/WorldMap.cs).
         // --m3-check checks The Ranch alone against the save (every plot on built ground), and --slime-zoo and --m6-check
-        // were built and timed on The Ranch alone, so these keep the single zone.
+        // were built and timed on The Ranch alone, so these keep the single zone; --joined-world runs them in the joined world
+        // (M3Check then skips the ground test for plots in cells that aren't loaded).
         WorldMap? map = null;
         var savedPlots = new Dictionary<string, IReadOnlyList<OpenRanch.Ranch.PlacedPlot>>();
-        var ranchAloneCheck = new[] { "--m3-check", "--slime-zoo", "--m6-check" }.Any(c => Array.IndexOf(args, c) >= 0);
+        var ranchAloneCheck = new[] { "--m3-check", "--slime-zoo", "--m6-check" }.Any(c => Array.IndexOf(args, c) >= 0)
+                              && Array.IndexOf(args, "--joined-world") < 0;
         if (Arg("--zone") is null && !ranchAloneCheck)
         {
             worldLighting = new WorldLighting(lighting, ambience, [], [], state.Hour, TimeOfDayLight.Read(assets, scene));
@@ -176,7 +186,7 @@ public partial class Ranch : Node3D
             if (saved is not null)
                 AddChild(writer = new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0, player));
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
-                AddChild(new SaveLoad.M3Check(saved, zone, m2, install, player));
+                AddChild(new SaveLoad.M3Check(saved, zone, m2, install, player, map is null ? null : map.IsLoadedAt));
         }
         var worldTime = WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
             ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args);
@@ -190,6 +200,20 @@ public partial class Ranch : Node3D
         // Milestone 6: plots, expansions and the ranch house screen in play (RanchEconomy/Economy.cs).
         if (saved is not null && m2 is not null && writer is not null)
             AddChild(new RanchEconomy.Economy(saved, zone, m2, layers, player, worldTime, house, writer, args));
+    }
+
+    // The checks that need other options: a usage line when one is missing, otherwise null.
+    private static string? Usage(string[] args, Func<string, string?> arg)
+    {
+        bool Has(string name) => Array.IndexOf(args, name) >= 0;
+        if (Has("--m6-check") && (arg("--sleep-save") is null || !Has("--new-game") && arg("--save") is null))
+            return "usage: --m6-check needs --sleep-save FILE and --new-game (or --save FILE), e.g. " +
+                   "--new-game --money 20000 --day-speed 720 --m6-check --sleep-save M6.ranch.json";
+        if (Has("--m3-check") && arg("--save") is null)
+            return "usage: --m3-check needs --save FILE (an original .sav or a .ranch.json); add --joined-world to check in the joined world";
+        if (Has("--save-out") && arg("--save") is null && !Has("--new-game"))
+            return "usage: --save-out FILE needs --save FILE or --new-game";
+        return null;
     }
 
     // Milestone 4: the save's plots on another zone's sites (SaveLoad/SavedRanch.cs reads one zone's sites at a time).

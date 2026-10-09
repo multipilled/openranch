@@ -31,11 +31,16 @@ public partial class M3Check : Node
     private readonly Slimes.M2World _m2;
     private readonly GameEnums _names;
     private readonly Player.PlayerController? _player;
+    private readonly System.Func<N.Vector3, bool>? _loadedAt;
     private double _time;
 
-    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install, Player.PlayerController? player = null)
+    /// <param name="loadedAt">In the joined world (World/WorldMap.cs): whether a point (Unity coordinates) lies in a loaded
+    /// cell. Plots elsewhere have no collision built, so the ground test skips them. Null: the zone is built whole.</param>
+    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install, Player.PlayerController? player = null,
+        System.Func<N.Vector3, bool>? loadedAt = null)
     {
         _player = player;
+        _loadedAt = loadedAt;
         Name = "M3Check";
         _saved = saved;
         _zone = zone;
@@ -87,8 +92,14 @@ public partial class M3Check : Node
         // what it hits more than 1.5 m above the site.
         var space = _m2.GetWorld3D().DirectSpaceState;
         var floorless = new List<string>();
+        var unloaded = 0;
         foreach (var plot in _saved.Plots)
         {
+            if (_loadedAt is not null && !_loadedAt(plot.Site.PlotWorld.Translation))
+            {
+                unloaded++;
+                continue;
+            }
             var at = UnityConvert.Position(plot.Site.PlotWorld.Translation);
             var from = at + Vector3.Up * 3;
             Godot.Collections.Dictionary hit;
@@ -102,7 +113,8 @@ public partial class M3Check : Node
                 floorless.Add($"{plot.Site.Id} ({_names.PlotType(plot.Plot.Type)}) at {plot.Site.PlotWorld.Translation}: " +
                               (hit.Count == 0 ? "nothing below" : $"ground at {hit["position"].AsVector3().Y:F2}, {(hit["collider"].AsGodotObject() is Node n ? n.GetPath().ToString() : "?")}"));
         }
-        Check(floorless.Count == 0, $"plots without ground under them: {floorless.Count}" + string.Concat(floorless.Take(5).Select(f => "\n         " + f)));
+        Check(floorless.Count == 0, $"plots without ground under them: {floorless.Count}" +
+                                    (_loadedAt is null ? "" : $" ({_saved.Plots.Count - unloaded} in loaded cells, {unloaded} in cells not loaded skipped)") + string.Concat(floorless.Take(5).Select(f => "\n         " + f)));
 
         // A second, independent read of the save for the plots' upgrades, crops and contents and the loose actors.
         var reader = RanchFiles.Read(_saved.FilePath);
