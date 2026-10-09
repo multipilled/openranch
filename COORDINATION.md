@@ -6,9 +6,8 @@ session) instead of editing it. The coordinator session "SR workstreams" merges 
 
 | Area | Owner session | Worktree / branch |
 |---|---|---|
-| game/scripts/SaveLoad (except SaveWriter*); src/OpenRanch.Ranch/PlotLayout.cs and new plot/actor files there; tests/OpenRanch.Ranch.Tests (new files); small hooks in game/scripts/Ranch.cs | SR M3: plot upgrades, contents and loose actors (running) | openranch-m3plots / m3-plots |
-| new files src/OpenRanch.Ranch/RanchWriter*.cs, game/scripts/SaveLoad/SaveWriter*.cs, tests for them; a save key/flag hook in game/scripts/Ranch.cs | SR M3: save the live ranch back (running) | openranch-m3save / m3-save |
-| game/scripts/World/WorldLighting.cs and new files in game/scripts/World (world clock); sky and fog shaders in game/shaders (not the landscape or paint shaders); docs/behavior/day-and-night.md and day-cycle.md; a small clock hook in game/scripts/Ranch.cs | SR day cycle in game | openranch-daycycle / day-cycle |
+| game/scripts/SaveLoad (incl. switching SaveWriter to the loader's save ids); src/OpenRanch.Ranch/PlotLayout.cs and new plot/actor files there; tests/OpenRanch.Ranch.Tests (new files); small hooks in game/scripts/Ranch.cs | SR M3: plot upgrades, contents and loose actors (running) | openranch-m3plots / m3-plots |
+| src/OpenRanch.Formats/Scene (zone extraction, except the `Hidden` set); game/scripts/World (except WorldLighting's clock); game/scripts/CollisionCheck.cs; new docs/behavior/zones.md; a `--zone` hook in game/scripts/Ranch.cs | SR M4: every zone builds and is walkable (proposed) | openranch-m4zones / m4-zones |
 | (paused, not merged: clean-room redo pending) landscape and paint shaders | SR Ranch look: shaders and lighting polish | openranch-render / m1-render-polish |
 | README.md, OpenRanch.sln (except adding your own new projects), COORDINATION.md, UNVERIFIED.md structure, tools/, merges | coordinator (SR workstreams) | main checkout |
 
@@ -24,29 +23,32 @@ Milestones, weighted by size (out of 100). Progress = the sum of finished weight
 | M0 | Foundation: Unity readers, importer, v12 save reader | 5 | 5 | done |
 | M1 | Walk The Ranch: world, collision, zone lighting | 8 | 7 | works; the clean-room look redo is still open |
 | M2 | Core loop: slimes eat and make plorts, vacpack, corrals, plort market | 8 | 7 | 3 slime types; tabby pounce and plort lifetime open |
-| M3 | Ranch save: full load, save back, running day cycle | 6 | 3 | loading merged; plots, save back and day cycle running |
+| M3 | Ranch save: full load, save back, running day cycle | 6 | 5 | load, save back, day cycle merged; plot upgrades/contents running |
 | M4 | Every zone walkable: Dry Reef, Indigo Quarry, Moss Blanket, Ancient Ruins, Glass Desert, Wilds, secret areas, teleporters | 18 | 0 | next |
 | M5 | Every slime, largo, gordo and tarr; feral; food, crops and chickens growing | 15 | 0 | |
 | M6 | Ranch economy: building and upgrading plots, expansions, Lab (refinery, fabricator, gadgets), Exchange, 7Zee | 15 | 0 | |
 | M7 | Game flow and UI: menus, HUD, vacpack UI, Slimepedia, mail, options, save slots | 10 | 0 | |
 | M8 | Sound and look: music, sound effects, clean-room landscape, foliage, water and sky | 8 | 1 | sound and text readers done |
 | M9 | Story and completion: Ogden, Mochi, Viktor, Slimeulations, achievements, ending | 7 | 0 | |
-| | **Total** | **100** | **23** | |
+| | **Total** | **100** | **25** | |
 
-Main: 06b66c5 (2026-10-08), M0-M2 done, M3 loading merged (`--m3-check` PASS on Game2_4, collision 40/40,
-tests 105/105). M3 is done when a save loads fully and the live ranch saves back.
+Main (2026-10-09): M0-M2 done; M3 loading, save back (`--save-out`, F5) and the running day cycle merged.
+On main: `--m3-check` PASS (Game2_4 and its re-saved .ranch.json), `--day-check` PASS, `--m2-check` PASS, collision
+40/40, tests 123/123. M3 is done when m3-plots lands.
 
 | P | Task | Owner | Status | Done-check |
 |---|---|---|---|---|
-| P2 | Day cycle in game: running world clock drives sun, sky, fog and night-only objects; starts at the save's world time | SR day cycle in game (openranch-daycycle) | running | headless `--day-check`: clock advances at `secsPerGameDay`, lighting at 4 hours matches the zone settings, night-only objects toggle at the data's hours; collision 40/40 |
+| P2 | Day cycle in game: running world clock drives sun, sky, fog and night-only objects; starts at the save's world time | SR day cycle in game | merged | headless `--day-check`: clock advances at `secsPerGameDay`, lighting at 4 hours matches the zone settings, night-only objects toggle at the data's hours; collision 40/40 |
 | P2 | M3 plots: saved plot upgrades switched on (prefab upgrade children), plot contents (crops, chickens, silo), loose actors (food, plorts, chickens) from the save | SR M3 plots (openranch-m3plots) | running | `--m3-check` extended: upgrades and actor counts by id match the save reader on Game2_4; PASS twice |
-| P2 | M3 save back: write the live ranch (money, world time, plots, slimes, actors) to `.ranch.json`; reload gives the same state | SR M3 save (openranch-m3save) | running | `--save X --save-out Y` then `--save Y --m3-check` PASS; writer unit tests round-trip |
+| P2 | M3 save back: write the live ranch (money, world time, plots, slimes, actors) to `.ranch.json`; reload gives the same state | SR M3 save | merged | `--save X --save-out Y` then `--save Y --m3-check` PASS; writer unit tests round-trip |
+| P2 | M4 zones: every main zone (Dry Reef, Indigo Quarry, Moss Blanket, Ancient Ruins, Glass Desert, Wilds) builds from the install with `--zone`, with its ambience; the player can walk it | SR M4 zones (openranch-m4zones) | proposed | `--zone X --collision-check` PASS for each zone; one off-screen capture per zone looks like the original's |
+| P2 | M4 one world: zones join into one walkable world (neighbours load as you cross, or all at once), teleporters work, the save's 15 outside plot sites appear | after M4 zones | later | walk Ranch to Dry Reef in one run; outside plots match the save |
+| P2 | M3 rest: M2's clock takes its time from the world clock; vacpack contents, market saturation and player position save and load; sleeping in the ranch house | unassigned | after m3-plots (same files) | round trip keeps vacpack, market and player; sleep skips to morning |
 | P3 | Render redo, clean room: landscape/paint look from behaviour notes, not translated shaders. m1-render-polish is NEVER merged | unassigned | paused | 5 reference spots closer than now; UNVERIFIED rows closed with sources |
 | P3 | Expansion purchase flow (barriers stay solid without `--save`; nothing lifts them yet) | unassigned | later (M4) | buy an expansion in game, barrier lifts, saved |
 | P3 | Slime ids with no M2 catalog prefab are skipped; `SavedRanch.Load` opens a second GameScripts | unassigned | later | none skipped on all 15 saves; one load |
 
-Next milestone after M3 (proposed, confirm with Control): **M4, leave The Ranch**: build the next zone (Dry
-Reef) from the install, the 15 save plot sites outside zoneRANCH appear there, the player can walk between zones.
+Next milestone: **M4, every zone walkable** (weight 18), started with M4 zones.
 
 Stale folders: D:\Projects\openranch-m3load and openranch-faces are empty but held open (their old
 sessions); delete once those sessions are archived.
