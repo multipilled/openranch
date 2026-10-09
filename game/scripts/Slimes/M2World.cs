@@ -43,7 +43,9 @@ public partial class M2World : Node3D
         // openranch's own price drift with the original's spread (UNVERIFIED.md, "Daily plort price noise").
         Market = new PlortMarket(MarketData, new WanderingMood(seed: 0));
         Wallet = new Wallet();
-        Pack = new Simulation.Vacpack(id => prefabs.Has(id) && prefabs.Get(id) is { VacuumSize: 0 } p && p.RootScript("Vacuumable") is not null);
+        // Lucky slimes drop their coins into this wallet (docs/behavior/feeding-habits.md).
+        Catalog.Wallet = Wallet;
+        Pack =new Simulation.Vacpack(id => prefabs.Has(id) && prefabs.Get(id) is { VacuumSize: 0 } p && p.RootScript("Vacuumable") is not null);
 
         AddChild(PenWalls.Build(zone, layers));
         foreach (var site in Sites.Markets)
