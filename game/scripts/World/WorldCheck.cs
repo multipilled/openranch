@@ -13,8 +13,8 @@ namespace OpenRanch.Game.World;
 
 /// <summary>
 /// Headless checks of the joined world (World/WorldMap.cs), run from the command line:
-///   --world-check            walks (and jetpacks where the way climbs) from The Ranch through the Dry Reef into the
-///                            Indigo Quarry's cave hub (--walk-to x,y,z elsewhere), on a route planned beforehand with
+///   --world-check            walks (and jetpacks where the way climbs) from The Ranch through the Dry Reef and over the
+///                            Slime Sea's bridge into the Moss Blanket (--walk-to x,y,z elsewhere), on a route planned beforehand with
 ///                            every cell loaded (World/RoutePlanner.cs) and then walked with cells streaming, reporting the
 ///                            cells that load and unload and the ambience zone on the way; then walks into a teleporter
 ///                            (--teleport-via NAME, default SeaMustacheIsland: the Slime Sea's mini island teleporter) and
@@ -26,10 +26,11 @@ namespace OpenRanch.Game.World;
 /// </summary>
 public partial class WorldCheck : Node
 {
-    // Where the walk ends: the Indigo Quarry's cave hub teleporter pad (its TeleportDestination "QuarryCaveHub").
-    private static readonly N.Vector3 DefaultEnd = new(228.2f, 5.8f, 147.0f);
+    // Where the walk ends: ground just inside the Moss Blanket's entrance cell (cellMoss_Entrance, ambience 2), past the
+    // Slime Sea's bridge from the Dry Reef. Test input, found with --list-cells and the route planner.
+    private static readonly N.Vector3 DefaultEnd = new(-144f, 11f, 360f);
     private const double LegTimeout = 25;
-    // Waypoints every this many planner steps.
+    // A straight, level stretch of the route becomes one waypoint for at most this many planner steps.
     private const int WaypointStride = 4;
     private const string DefaultTeleport = "SeaMustacheIsland";
 
@@ -153,7 +154,7 @@ public partial class WorldCheck : Node
                 Finish();
                 return;
             }
-            _path = route.Where((_, i) => i % WaypointStride == 0).Skip(1).Append(route[^1]).ToList();
+            _path = Waypoints(route);
             Log($"route planned in {clock.ElapsedMilliseconds} ms: {route.Count} steps, {_path.Count} waypoints, " +
                 $"{route.Zip(route.Skip(1), N.Vector3.Distance).Sum():F0} m");
             // Back to cells loading around the player only.
@@ -295,6 +296,26 @@ public partial class WorldCheck : Node
             if (_jetTime <= 0)
                 Input.ActionRelease("jump");
         }
+    }
+
+    // The planner's steps the walker heads for: every turn and every rise or drop of the route is kept, so walking straight
+    // between waypoints never cuts a corner over a drop or a kill volume (the Slime Sea beside the bridge to the Moss Blanket).
+    private static List<N.Vector3> Waypoints(List<N.Vector3> route)
+    {
+        var path = new List<N.Vector3>();
+        var last = 0;
+        for (var i = 1; i < route.Count - 1; i++)
+        {
+            var straight = N.Vector3.Normalize((route[i] - route[i - 1]) with { Y = 0 }) is var a
+                && N.Vector3.Normalize((route[i + 1] - route[i]) with { Y = 0 }) is var b && N.Vector3.Dot(a, b) > 0.99f;
+            var level = Math.Abs(route[i + 1].Y - route[i].Y) < 0.8f && Math.Abs(route[i].Y - route[i - 1].Y) < 0.8f;
+            if (straight && level && i - last < WaypointStride)
+                continue;
+            path.Add(route[i]);
+            last = i;
+        }
+        path.Add(route[^1]);
+        return path;
     }
 
     private void StartTeleport()
