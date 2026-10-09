@@ -74,6 +74,26 @@ public sealed class ItemCatalog
     /// </summary>
     public List<FeedingPatch> Patches { get; } = [];
 
+    /// <summary>
+    /// Whether the player's body (its capsule) overlaps a sphere at <paramref name="center"/> (Godot
+    /// coordinates): how openranch checks the original's trigger spheres against the player (rad auras,
+    /// crystal spikes), so a player moved by a script counts at once.
+    /// </summary>
+    public bool PlayerInSphere(Vector3 center, float radius)
+    {
+        if (Player is not { } player || !GodotObject.IsInstanceValid(player))
+            return false;
+        var capsule = player.GetChildren().OfType<CollisionShape3D>().Select(c => (c, s: c.Shape as CapsuleShape3D)).FirstOrDefault(x => x.s is not null);
+        if (capsule.s is not { } shape)
+            return player.GlobalPosition.DistanceTo(center) <= radius;
+        var mid = capsule.c.GlobalPosition;
+        var half = Math.Max(0f, shape.Height / 2 - shape.Radius);
+        var (a, b) = (mid + Vector3.Down * half, mid + Vector3.Up * half);
+        var ab = b - a;
+        var t = ab.LengthSquared() > 0 ? Math.Clamp((center - a).Dot(ab) / ab.LengthSquared(), 0f, 1f) : 0f;
+        return (a + ab * t).DistanceTo(center) <= radius + shape.Radius;
+    }
+
     /// <summary>The item id a prefab's <c>Identifiable</c> names (null when it has none).</summary>
     public string? ItemIdOf(ItemPrefab? prefab) =>
         prefab?.RootScript("Identifiable")?["id"] is { } id ? Scripts.IdentifiableIds.NameOf(Convert.ToInt64(id)) : null;

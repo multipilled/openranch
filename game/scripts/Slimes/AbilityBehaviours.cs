@@ -72,9 +72,9 @@ public sealed class RadAura : SlimeBehaviour
 {
     private readonly float _radPerSecond;
     private readonly PrefabCollider? _trigger;
-    private SphereShape3D? _sphere;
+    private Vector3 _offset;
     private float _baseRadius, _scale = 1f, _next, _phaseEnds;
-    private bool _expanding, _expanded, _playerInside;
+    private bool _expanding, _expanded;
 
     public RadAura(ItemPrefab prefab)
     {
@@ -94,13 +94,8 @@ public sealed class RadAura : SlimeBehaviour
         _next = Slime.Age + Delay();
         if (_trigger is null || ColliderShapes.Make(_trigger.Collider, UnityConvert.Transform(_trigger.ToRoot)) is not { Shape: SphereShape3D sphere } shape)
             return;
-        _sphere = sphere;
         _baseRadius = sphere.Radius;
-        var area = new Area3D { Name = "RadAura", CollisionLayer = 0, CollisionMask = Actor.WorldLayer, Monitorable = false };
-        area.AddChild(shape);
-        area.BodyEntered += b => { if (b == Catalog.Player) _playerInside = true; };
-        area.BodyExited += b => { if (b == Catalog.Player) _playerInside = false; };
-        Slime.AddChild(area);
+        _offset = shape.Position;
     }
 
     private float Delay() => AbilityDelay.Pick(RadSlime.MinDelay, RadSlime.MaxDelay, Slime.Sim.Agitation, Slime.Random.NextDouble());
@@ -127,9 +122,7 @@ public sealed class RadAura : SlimeBehaviour
             Report($"aura swelled to {_scale:F2}x (radius {Radius:F2} m, normally {_baseRadius:F2} m)");
         }
         _scale = RadSlime.StepScale(_scale, _expanding || _expanded ? RadSlime.ExpandFactor : 1f, delta);
-        if (_sphere is not null)
-            _sphere.Radius = _baseRadius * _scale;
-        if (_playerInside && Catalog.Player is { } player && GodotObject.IsInstanceValid(player))
+        if (_baseRadius > 0 && Catalog.PlayerInSphere(Slime.GlobalTransform * _offset, Radius))
         {
             var rads = _radPerSecond * delta;
             RadsGiven += rads;
@@ -243,7 +236,7 @@ public sealed class CrystalLaunch : SlimeBehaviour
 }
 
 /// <summary>A crystal spike (<c>CrystalSpikesLifecycle</c>): hurts the player it touches by <c>damagePerHit</c>, gone after <c>lifetime</c> game hours.</summary>
-public partial class CrystalSpike : Area3D
+public partial class CrystalSpike : Node3D
 {
     private readonly ItemCatalog _catalog;
     private readonly double _dies;
@@ -257,22 +250,17 @@ public partial class CrystalSpike : Area3D
         // The lifetime counts from the new-game start if the clock hasn't reached it (HoursFromNowOrStart).
         _dies = Math.Max(catalog.Clock.TotalHours, OutsideHours.ClockStartHours) + (life?["lifetime"] is float h ? h : 0f);
         Name = prefab.Name;
-        CollisionLayer = 0;
-        CollisionMask = Actor.WorldLayer;
-        Monitorable = false;
         RotationDegrees = new Vector3(0, (float)yawDegrees, 0);
         AddChild(catalog.VisualFor(prefab));
         foreach (var c in prefab.Colliders.Where(c => c.Collider.IsTrigger))
-            if (ColliderShapes.Make(c.Collider, UnityConvert.Transform(c.ToRoot)) is { } shape)
-                AddChild(shape);
-        BodyEntered += b =>
-        {
-            if (b != _catalog.Player)
-                return;
-            Hits++;
-            _catalog.PlayerVitals.Damage(_damage, prefab.Name);
-        };
+            if (ColliderShapes.Make(c.Collider, UnityConvert.Transform(c.ToRoot)) is { Shape: SphereShape3D sphere } shape)
+                _spheres.Add((shape.Position, sphere.Radius));
+        _source = prefab.Name;
     }
+
+    private readonly List<(Vector3 Offset, float Radius)> _spheres = [];
+    private readonly string _source;
+    private bool _touching;
 
     public int Damage => _damage;
     public double DiesAt => _dies;
@@ -281,7 +269,18 @@ public partial class CrystalSpike : Area3D
     public override void _PhysicsProcess(double delta)
     {
         if (_catalog.Clock.TotalHours >= _dies)
+        {
             QueueFree();
+            return;
+        }
+        // The trigger hurts on entering, once per touch.
+        var touching = _spheres.Any(s => _catalog.PlayerInSphere(GlobalTransform * s.Offset, s.Radius));
+        if (touching && !_touching)
+        {
+            Hits++;
+            _catalog.PlayerVitals.Damage(_damage, _source);
+        }
+        _touching = touching;
     }
 }
 

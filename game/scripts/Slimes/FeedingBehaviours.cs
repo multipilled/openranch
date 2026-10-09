@@ -64,16 +64,21 @@ public sealed class StalkPounce : SlimeBehaviour
 
     public override bool CanRethink => _mode == Mode.None;
 
+    /// <summary>Whether the slime is stalking now (this piece is in charge).</summary>
+    public bool Active { get; private set; }
+
     public override void Selected()
     {
         Slime.Behaviour<Stealth>()?.SetStealth(true);
         _mode = Mode.None;
+        Active = true;
     }
 
     public override void Deselected()
     {
         Slime.Behaviour<Stealth>()?.SetStealth(false);
         _mode = Mode.None;
+        Active = false;
     }
 
     public override void Touched(Node body)

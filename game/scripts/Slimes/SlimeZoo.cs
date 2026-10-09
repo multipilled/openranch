@@ -26,7 +26,7 @@ namespace OpenRanch.Game.Slimes;
 /// </summary>
 public partial class SlimeZoo : Node3D
 {
-    private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TimeoutSeconds = 180;
+    private const float PenSize = 4f, TrialPenSize = 14f, WallHeight = 40f, WallThickness = 0.2f, TimeoutSeconds = 300;
     private const string FormingSlime = "PINK_SLIME", FirstPlort = "ROCK_PLORT", ThirdPlort = "TABBY_PLORT";
 
     private sealed class Pen

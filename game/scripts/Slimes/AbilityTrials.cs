@@ -117,7 +117,13 @@ public static class AbilityTrials
         {
             Before = t =>
             {
-                if (!t.Notes.ContainsKey("due")) { t.Notes["due"] = t.Time; t.Piece.DueNow(); }
+                if (t.Notes.ContainsKey("due"))
+                    return;
+                // It may have wandered while another trial had the player: back beside the player (1.3 m away).
+                t.Slime.GlobalPosition = new Vector3(t.Center.X, t.Slime.GlobalPosition.Y, t.Center.Z);
+                t.Slime.LinearVelocity = Vector3.Zero;
+                t.Notes["due"] = t.Time;
+                t.Piece.DueNow();
             },
             Verdict = t =>
             {
@@ -140,8 +146,10 @@ public static class AbilityTrials
                 var big = spikes[0];
                 if (!t.HoldPlayer(big.GlobalPosition))
                     return null;
+                if (!t.Notes.ContainsKey("held"))
+                    t.Notes["held"] = t.Time;
                 if (big.Hits == 0)
-                    return t.Time - t.FiredAt > 5 ? (false, $"{t.LastLine}; the player on the big spike wasn't hurt") : null;
+                    return t.Time - (double)t.Notes["held"] > 2 ? (false, $"{t.LastLine}; the player on the big spike wasn't hurt") : null;
                 var (min, max) = CrystalSlime.SmallSpikes(t.Slime.Mass);
                 var small = spikes.Count - 1;
                 var life = big.DiesAt - Math.Max(t.Catalog.Clock.TotalHours, 0);
@@ -173,7 +181,8 @@ public static class AbilityTrials
         // Dervish: agitated, its spin lifts it and sets a whirlwind loose that lasts the prefab's time.
         yield return new AbilityTrial<DervishSpin>("DERVISH", "DERVISH_SLIME")
         {
-            Setup = t => { t.Slime.Sim.Agitation = 1; t.Place("PINK_PLORT", t.Center + new Vector3(1.5f, 0, 0)); },
+            // A veggie (not in a dervish's diet, and not a plort it would turn into a largo on) for the whirlwind to catch.
+            Setup = t => { t.Slime.Sim.Agitation = 1; t.Place("CARROT_VEGGIE", t.Center + new Vector3(1.5f, 0, 0)); },
             Before = t =>
             {
                 t.Slime.Sim.Agitation = 1;
@@ -223,15 +232,26 @@ public static class AbilityTrials
             },
         };
 
-        // Hunter: invisible for its first 5 s, then seen.
+        // Hunter: invisible for its first 5 s; after that cloaked exactly while it stalks (here it stalks
+        // the player, who is prey within its 60 m), and seen otherwise.
         yield return new AbilityTrial<Stealth>("HUNTER_CLOAK", "HUNTER_SLIME")
         {
             Verdict = t =>
             {
-                if (t.Piece.Cloaked)
-                    return t.Time > 30 ? (false, "never decloaked") : null;
                 var age = t.Slime.Age;
-                return (age >= HunterSlime.InitialStealthSeconds && age <= HunterSlime.InitialStealthSeconds + 1f, $"{t.LastLine} (cloaked from the start, {HunterSlime.InitialStealthSeconds} s then fading at {HunterSlime.OpacityPerSecond}/s)");
+                if (age < HunterSlime.InitialStealthSeconds - 0.5f)
+                {
+                    if (t.Piece.Opacity > 0)
+                        return (false, $"seen at {age:F1} s, before its first {HunterSlime.InitialStealthSeconds} s were up");
+                    return null;
+                }
+                if (age < HunterSlime.InitialStealthSeconds + 1f)
+                    return null;
+                var stalking = t.Slime.Behaviour<StalkPounce>()?.Active ?? false;
+                var settled = t.Piece.Opacity is 0f or 1f;
+                if (!settled)
+                    return null;
+                return (t.Piece.Cloaked == stalking, $"invisible for its first {HunterSlime.InitialStealthSeconds} s; at {age:F1} s stalking={stalking}, cloaked={t.Piece.Cloaked} (opacity {t.Piece.Opacity:F1})");
             },
         };
 
