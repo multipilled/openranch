@@ -27,3 +27,5 @@ before other work relies on it.
 | Vegetable ramp lookup position | 0.15 + 0.7 x occlusion | the vegetable shader | render |
 | Fog distance measure | view depth | the original fog's distance (depth vs radial) | render |
 | Daily plort price noise | own smooth noise with the same spread | the original's noise function, or a documented deliberate difference | m2 |
+| Which expansion barriers a save has opened (Lab, Grotto, Overgrowth and the passages between them) | open when every `UNLOCK_<NAME>` progress named in the barrier's cell or object name is > 0; door barriers follow the save's door state | the original's barrier rule (code only) | m3 |
+| Saved slime facing | Godot yaw = -Unity euler Y; pitch and roll ignored | slimes' saved rotation compared in game | m3 |
