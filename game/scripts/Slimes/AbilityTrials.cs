@@ -29,6 +29,8 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
     public bool MayVanish { get; init; }
     public readonly Dictionary<string, object> Notes = [];
 
+    private const double DeadlineSeconds = 150;
+
     public AbilityTrial(string name, string slimeId, Vector3? playerAt = null, string group = "abilities") : base(name, group)
     {
         _slimeId = slimeId;
@@ -67,6 +69,12 @@ public sealed class AbilityTrial<T> : ZooTrial where T : SlimeBehaviour
                 Finish(last.Ok, last.Line);
             else
                 Finish(false, $"{_slimeId} is gone ({LastLine ?? "never fired"})");
+            return;
+        }
+        // A trial that can't finish gives the player back for the others.
+        if (Time > DeadlineSeconds)
+        {
+            Finish(false, TimedOut());
             return;
         }
         if (_playerAt is { } at && !HasPlayer)

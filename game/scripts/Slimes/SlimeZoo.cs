@@ -40,6 +40,8 @@ public partial class SlimeZoo : Node3D
         public List<string> Made = [];
         public SlimeActor? Actor;
         public double FedAt;
+        public List<Actor> Plorts = [];
+        public bool Cleared;
         public bool Done => Food is null || (Ate && Expected.GroupBy(e => e).All(g => Made.Count(m => m == g.Key) >= g.Count()));
     }
 
@@ -168,7 +170,7 @@ public partial class SlimeZoo : Node3D
             pen.FedAt = _time;
             slime.Sim.Hunger = 1; // hungry from the start, so the check doesn't wait hours of game time
             slime.Ate += (_, eaten) => pen.Ate |= eaten == pen.Food;
-            slime.Produced += (_, item) => pen.Made.Add(item.Id);
+            slime.Produced += (_, item) => { pen.Made.Add(item.Id); pen.Plorts.Add(item); };
             _pens.Add(pen);
         }
 
@@ -201,6 +203,14 @@ public partial class SlimeZoo : Node3D
     // can bat it out of reach, or carry it off) gets a fresh one dropped on it.
     private void Refeed()
     {
+        // Finished pens lose their plorts, so stalkers in the trial pens don't spend the run after them
+        // (plorts carry extra drive for every slime). openranch's own test housekeeping.
+        foreach (var pen in _pens.Where(p => p.Done && !p.Cleared))
+        {
+            pen.Cleared = true;
+            foreach (var plort in pen.Plorts.Where(p => IsInstanceValid(p) && !p.Consumed && p.CaughtBy is null))
+                plort.Consume();
+        }
         foreach (var pen in _pens)
         {
             if (pen.Ate || pen.Food is null || pen.Actor is not { } s || !IsInstanceValid(s) || s.Consumed || _time - pen.FedAt < RefeedSeconds)
