@@ -3,7 +3,7 @@
 How the world scene is split into zones and cells, which ambience each part of the world shows, and
 where the player arrives in each zone. Read from the world scene (`level3`) and its scripts' data, with
 the rules from static analysis of the ambience director, the region scripts and the teleport network.
-openranch builds one zone at a time with `--zone NAME`; joining them is the next step (see the end).
+openranch builds one zone at a time with `--zone NAME`, or the joined world without it (see the end).
 
 ## Zones and cells
 
@@ -118,6 +118,90 @@ The Slimeulations' glitch walls draw as flat white: their material kind isn't ha
 ## Joining the zones
 
 All zones share one coordinate space (the scene places them where they meet), so building several roots
-into one world needs no offsets. What the original does on top: each zone belongs to a region set (the Far,
-Far Range, the Slimeulations, Viktor's lab...), and only the current set's regions are live; cells load and
-unload by distance through their regions (`RegionLoader`).
+into one world needs no offsets.
+
+### Region sets
+
+Each zone belongs to a region set (`RegionRegistry.RegionSetId`), and only the set the player is in is live; the
+others are neither drawn nor simulated. Which zone goes in which set is code only (static analysis:
+`ZoneDirector.GetRegionSetId`, called by `Region.Awake` with the zone of the `ZoneDirector` above the region):
+
+| Set | Zones |
+|---|---|
+| HOME | The Ranch, Dry Reef, Indigo Quarry, Moss Blanket, Slime Sea, Ruins and their transition, the Wilds, Ogden's retreat |
+| DESERT | Glass Desert |
+| VALLEY | Nimble Valley, Mochi's manor |
+| VIKTOR_LAB | Viktor's workshop |
+| SLIMULATIONS | the Slimeulations |
+
+So everything reached on foot from The Ranch is one set (93 cells), and the Glass Desert, the Valley, the Lab and
+the Slimeulations are reached only by teleporter, which switches the live set.
+
+### Cells load and unload around the player
+
+Every cell's objects under its `Sector` belong to its region; the rest of the zone root (the zone's own objects,
+its teleporters, caves and kill volumes) stands while its set is live. The player rig's `RegionLoader` reads, from
+the scene, a load box of 200 x 200 x 200 m around the player (a wake box of 50 x 200 x 50 m for actors) and an
+unload buffer of 0.1. A cell loads once its region box overlaps the load box, and unloads once it no longer overlaps
+the load box grown by the buffer (220 m). The check runs only after the player has moved at least 1 m since the last
+one, or when forced (a teleport, a change of set). An unloaded cell shows its region's low-detail proxy mesh, without
+shadows (`Region.CreateProxy`). Static analysis: `RegionLoader.UpdateProxied`, `Region`.
+
+### Teleporters, kill volumes, wake-up points
+
+A teleporter (`TeleportSource`) sends the player to a destination with its `destinationSetName`, picked at random
+among those whose link is open; the player lands on the destination object's position and, with `reorient`, its
+rotation; the destination's region set becomes live. Two-way teleporters wait until the player has left their
+trigger before they can send them back. Links are shut while a source waits for an outside switch (the Ruins' temple
+exit), while its blocker (a gordo) stands, while the player lacks its progress (the Lab: UNLOCK_VIKTOR_MISSIONS) or
+while its quicksilver generator runs (static analysis: `TeleportNetwork`, `TeleportSource`, `TeleportDestination`).
+
+Kill volumes (`KillOnTrigger`) of every zone of the live set apply across zones: walking from the Dry Reef onto the
+Slime Sea's bridge and falling off it kills the player in the Sea's kill volume, and one second later
+(`PlayerDeathHandler.ResetPlayer`) they wake at their set's wake-up point (`WakeUpDestination`), or HOME's (the ranch
+house) when the set has none (`SceneContext.GetWakeUpDestination`).
+
+### A save outside The Ranch
+
+The save stores the player's position, view and region set (`PlayerModel.currRegionSetId`). A player saved in the
+Glass Desert (Game2_4: (-40.8, 1024.6, 559.4), DESERT) starts there, with the DESERT set live and the Desert's
+ambience (3). The save's plots stand on their sites in every zone: in Game2_4 and Logansfarm_5, 41 plots, 26 on
+The Ranch and 15 outside it (5 at Mochi's manor, 6 at Ogden's retreat, 4 at Viktor's workshop).
+
+## In openranch: the joined world
+
+Without `--zone`, openranch reads every zone root and builds the live set's zones and the cells around the player
+(`game/scripts/World/WorldMap.cs`, logic in `src/OpenRanch.Formats/Scene/WorldRegions.cs`); the lighting follows the
+live set's cells and caves (one list for all its zones). The player starts at `--camera`, at `--spawn NAME`, where a
+`--save` left them, or else at the player rig's place on The Ranch (`World/WorldStart.cs`). `--load-all` loads every
+cell of the live set. Cells that load while walking are built one per frame, their proxy showing until then.
+
+Checks (Godot 4.7.2 headless, this PC, other projects' jobs running at the same time):
+
+- `--world-check` plans a route with every cell loaded (rays down on a 2 m grid, A* over floors the player's own
+  capsule can reach on foot, with jetpack climbs up to 12 m and drops up to 40 m; `World/RoutePlanner.cs`), then
+  walks it with cells streaming: The Ranch, the Dry Reef, the Slime Sea's bridge, into the Moss Blanket's entrance
+  (882 m, 109 s of game time, 24 cells loaded and 32 unloaded on the way, ambience 0 -> 2 at the Moss Blanket's
+  edge). Then it walks into the Slime Sea's mini island teleporter and lands on `SeaMustacheIsland` 0.01 m from its
+  destination, staying there 2 s. PASS.
+- `--save-check` with Game2_4: starts in DESERT 0.08 m from the saved place, ambience 3; every plot of the save on
+  its site with its type. PASS; Logansfarm_5 (saved on The Ranch) likewise.
+- `--list-cells` prints every cell box, destination and source; `--ground-map` the ground heights over a rectangle.
+
+Time and memory (one run each):
+
+| What | Time | Memory (private / managed) |
+|---|---|---|
+| Reading all 14 zone roots, split by region | 3.8 to 8.6 s | |
+| Setting up the HOME set (9 zones, 93 cells; always-there objects and proxies) | 2.6 to 4.0 s | |
+| Setting up the DESERT set (25 cells) | 1.1 s | |
+| Building the cells around the start (6 to 9 cells) | 0.8 to 1.6 s | |
+| One cell while walking (one per frame) | 3.7 s for all 93 cells, about 40 ms each | |
+| Start to playing, HOME, new game | 7.8 to 8.8 s | |
+| Glass Desert start (Game2_4), 6 cells built | 14.1 s from start | 759 MB / 506 MB |
+| The Ranch start (Logansfarm_5, slimes and plots), 7 cells built | 13.3 s from start | 1,062 MB / 717 MB |
+| Every HOME cell built (after the route plan) | | about 1,540 MB / 700 MB |
+| Route plan, Ranch to Moss Blanket (2 m grid over 580 x 880 m) | 66 to 72 s | |
+
+Not modelled yet: the actors' smaller wake box (actors outside every loaded cell are frozen instead), and switching
+the set when the player walks into another set's cells without a teleporter (the sets don't touch on foot).
