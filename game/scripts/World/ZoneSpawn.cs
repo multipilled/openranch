@@ -11,6 +11,7 @@ namespace OpenRanch.Game.World;
 /// first teleporter destination in scene order that the player arrives at by the zone's own teleporter (not an
 /// echo note gordo's, which only opens once that gordo is popped), otherwise any destination. The player lands
 /// on the destination's position and, when it reorients, faces its way (TeleportablePlayer.TeleportTo).
+/// --spawn NAME picks another of the zone's destinations by name instead.
 /// </summary>
 public static class ZoneSpawn
 {
@@ -19,9 +20,10 @@ public static class ZoneSpawn
 
     public sealed record Spawn(TeleportPoint Point, N.Vector3 Position, float YawDegrees);
 
-    public static Spawn? Pick(ZoneExtract zone)
+    public static Spawn? Pick(ZoneExtract zone, string? name = null)
     {
-        var point = zone.Teleports.FirstOrDefault(t => t.IsDebugStart)
+        var point = (name is null ? null : zone.Teleports.FirstOrDefault(t => t.Name == name))
+                    ?? zone.Teleports.FirstOrDefault(t => t.IsDebugStart)
                     ?? zone.Teleports.FirstOrDefault(t => t.Name != EchoNoteGordo)
                     ?? zone.Teleports.FirstOrDefault();
         if (point is null)

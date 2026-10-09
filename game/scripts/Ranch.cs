@@ -15,7 +15,8 @@ namespace OpenRanch.Game;
 /// Milestone 1: The Ranch, built at startup from the player's own copy of Slime Rancher, with a
 /// first-person controller. Command-line options after "--":
 ///   --game DIR                      the Slime Rancher folder, if it isn't found automatically
-///   --zone NAME                     which area to build (default zoneRANCH)
+///   --zone NAME                     which area to build (default zoneRANCH); other areas start at a teleporter
+///   --spawn NAME                    with --zone: start at the zone's teleporter of this name (World/ZoneSpawn.cs)
 ///   --camera x,y,z,yaw,pitch        start position and view in the original game's coordinates
 ///   --save FILE                     open this save: an original v12 save or an openranch .ranch.json (plots,
 ///                                   corral slimes, money, ranch upgrades, time of day); read only
@@ -84,7 +85,7 @@ public partial class Ranch : Node3D
         player.Position = UnityConvert.Position(rig.Spawn);
         // Milestone 4: other areas start where a teleporter puts the player (World/ZoneSpawn.cs).
         var otherZone = zoneName != "zoneRANCH";
-        if (otherZone && ZoneSpawn.Pick(zone) is { } spawn)
+        if (otherZone && ZoneSpawn.Pick(zone, Arg("--spawn")) is { } spawn)
         {
             player.Position = UnityConvert.Position(spawn.Position);
             player.Look(-spawn.YawDegrees, 0);
@@ -107,6 +108,8 @@ public partial class Ranch : Node3D
                 player.SetPhysicsProcess(false); // hold the exact view for the capture
         }
         worldLighting.Attach(player.Camera);
+        if (otherZone)
+            GD.Print($"{zoneName}: ambience zone {worldLighting.OutsideZone} outside caves at the start");
 
         // Milestone 2: slimes, food, vacpack, corral walls and the plort market (game/scripts/Slimes).
         // With a save, its money and corral slimes take the place of the demo slimes.
