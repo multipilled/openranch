@@ -44,6 +44,11 @@ not drawn yet). Testing options: `--hour H` starts at hour H of the starting day
 the clock X times faster, and `--day-check` checks the start time, the pace (normal and 60 times faster),
 the lighting at four hours and the timed objects, then quits.
 
+Everything else that runs on game time follows this one clock: slimes' hunger and digestion, plort
+timing and the plort market's days take their game hours from the world time, so `--day-speed` and
+sleeping speed them up too, and the market's day is the clock's day (`M2World.Follow`; `--m3-check`
+compares the two clocks).
+
 ## Parts of the day
 
 The clock's icon splits the day into four parts (code-only, from static analysis of the time
@@ -67,8 +72,18 @@ lighting has its own blend, described in day-and-night.md.
 - The world keeps running while the clock runs fast: slimes get hungry, crops grow, timers fire.
   Nothing about sleeping is saved; a save holds only the world time.
 
-Checked: static analysis of the ranch house's sleep button and the time director (code-only).
-openranch's `DayCycle` does the same and is unit tested.
+- The player is held still while sleeping.
+- The way in is the ranch house's door: an object in the world scene with a UI activator whose
+  screen is the ranch house's. The player uses it by looking at it (a ray from the middle of the
+  view, as long as the player rig's `interactDistance`, 3 m in the install) and pressing the
+  interact button; it acts when the button is released. The ranch house screen then offers sleeping.
+
+Checked: static analysis of the ranch house's sleep button, the time director, the player lock and
+the UI detector (code-only); the door, its screen and the reach are read from the install.
+openranch's `DayCycle` does the same and is unit tested. openranch has no ranch house screen yet:
+using the door (E) sleeps at once (`game/scripts/Home/RanchHouse.cs`). `--hour 20 --sleep-check`
+stands the player at the door, uses it and checks the wake-up time, the pace and that the slimes'
+clock slept along.
 
 ## Ranch areas the player is away from
 
@@ -82,6 +97,8 @@ Checked: the stored times read from the development PC's saves. How the catch-up
 is not modelled yet.
 
 ## Not modelled yet
+
+- The ranch house screen (sleeping, and what else it offers) and the original's save on sleeping.
 
 - Death costs time: the clock jumps forward by a number of game hours, or to the dawn after the next
   dusk, as the game mode's settings say, and always by at least 390 game seconds.

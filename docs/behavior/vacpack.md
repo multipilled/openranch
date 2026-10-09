@@ -84,7 +84,34 @@ Studied on a developer's PC from how the original works:
 The keys are openranch's own: hold the right mouse button to vacuum, hold the left button to shoot,
 1 to 4 pick a slot and the mouse wheel cycles slots.
 
+## Slimes' moods in the vacpack
+
+- A slot of slimes keeps one set of moods (hunger, agitation, fear) for all of them. The first slime
+  into an empty slot brings its moods as they are; each slime after that is averaged in with a
+  weight of 1 over the slot's new count (the fourth slime counts a quarter).
+- A slime shot out takes the slot's moods. Taking slimes out doesn't change the slot's moods; an
+  emptied slot forgets them.
+
+Checked: static analysis of the original's vacpack slots and shooting; unit tested
+(`VacpackTests`). openranch models hunger and agitation only; a saved fear level stays in the slot
+as it was.
+
+## Saved
+
+- The player block of a save holds the vacpack's slots for each vacpack mode (normal play and the
+  Nimble Valley's), in slot order: five for normal play. An empty slot is the "none" item with
+  count 0. Each slot keeps its moods.
+- Which slot is selected is not saved; a loaded game starts on the first.
+- The capacity is not saved with the slots: it comes from the player's upgrades. Each capacity
+  upgrade sets its own limit (the table above) and the liquid slot upgrade opens the fifth slot,
+  applied in the order the upgrades are stored.
+
+openranch loads the slots of normal play into the vacpack (`PlayerVacpack.Load`) and writes them
+back when saving (`PlayerVacpack.Save`), so something sucked up in play, a slime included, is in
+the save instead of the world. The Nimble Valley's slots pass through unchanged. Checked: static
+analysis of the original's save code; `--m3-check` compares every slot (item, count, moods) with
+the save, and `PlayerVacpackTests` round-trips them.
+
 ## Not modelled yet
 
-- Slimes in the vacpack keep their averaged mood (hunger, agitation) and get it back when shot out.
 - The Nimble Valley mode's separate three-slot pack.

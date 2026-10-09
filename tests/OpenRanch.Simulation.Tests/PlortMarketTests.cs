@@ -81,4 +81,20 @@ public class PlortMarketTests
             Assert.True(Math.Abs(mood.Market(day + 1) - mood.Market(day)) < 0.25f);
         }
     }
+
+    [Fact]
+    public void A_loaded_market_prices_from_the_saved_saturation_without_recovering_first()
+    {
+        var market = new PlortMarket(Data(recovery: 0.25f));
+        market.Load(new Dictionary<string, float> { ["TEST_PLORT"] = 20, ["NOT_SOLD_HERE"] = 3 });
+        market.Open(36);
+        Assert.Equal(36, market.Day);
+        Assert.Equal(20f, market.Saturation("TEST_PLORT"));
+        Assert.Equal(10, market.Price("TEST_PLORT")); // fully saturated: base price
+        Assert.Equal(0, market.PriceChange("TEST_PLORT")); // yesterday's price counts as the base value
+        Assert.Equal(20f, market.Saturations["OTHER_PLORT"]); // not in the save: as a new game
+        // The next midnight recovers as usual.
+        market.StartDay(37);
+        Assert.Equal(15f, market.Saturation("TEST_PLORT"), 3);
+    }
 }

@@ -26,6 +26,7 @@ namespace OpenRanch.Game;
 ///   --collision-check               test that the area's ground can be stood on, print a report, quit
 ///   --no-slimes, --m2-check         milestone 2 options, see Slimes/M2World.cs
 ///   --hour H, --day-speed X, --day-check   the world clock, see World/WorldTime.cs
+///   --sleep-check                   sleep through the ranch house's door and check the clock, see Home/RanchHouse.cs
 /// </summary>
 public partial class Ranch : Node3D
 {
@@ -89,6 +90,14 @@ public partial class Ranch : Node3D
             return;
         }
 
+        // Milestone 3: the player stands where the save left them, looking the same way (SaveLoad/SavedRanch.cs).
+        if (saved?.Player is { } start)
+        {
+            player.Position = UnityConvert.Position(start.Position);
+            // Unity yaw turns clockwise seen from above and positive pitch looks down; Godot is the reverse.
+            player.Look(-start.Yaw, -start.Pitch);
+        }
+
         if (Arg("--camera") is { } camera)
         {
             var v = camera.Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture)).ToArray();
@@ -110,12 +119,18 @@ public partial class Ranch : Node3D
             saved?.Populate(m2);
             // Milestone 3: the live ranch saves back to openranch's own format (SaveLoad/SaveWriter.cs).
             if (saved is not null)
-                AddChild(new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0));
+                AddChild(new SaveLoad.SaveWriter(saved, m2, install, Arg("--save-out"), quitAfterWrite: Array.IndexOf(args, "--m3-check") < 0, player));
             if (saved is not null && Array.IndexOf(args, "--m3-check") >= 0)
-                AddChild(new SaveLoad.M3Check(saved, zone, m2, install));
+                AddChild(new SaveLoad.M3Check(saved, zone, m2, install, player));
         }
-        AddChild(WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
-            ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args));
+        var worldTime = WorldTime.Create(install, m2?.Scripts, ranchState, worldLighting, timed,
+            ambience.FirstOrDefault(a => a.Zone == ZoneAmbience.DefaultZone), saved is not null, args);
+        AddChild(worldTime);
+        // One clock: milestone 2's game time (hunger, plorts, market days) follows the world clock.
+        m2?.Follow(worldTime);
+        // The ranch house's door: sleeping until morning (Home/RanchHouse.cs).
+        if (m2 is not null && Home.RanchHouse.Create(m2.Scripts, zoneName, player, worldTime, m2, args) is { } house)
+            AddChild(house);
     }
 
     private void ShowMessage(string text)

@@ -9,7 +9,8 @@ namespace OpenRanch.Game.SaveLoad;
 /// Produce hanging from a crop's spawn joint: held still where it hangs. Unripe produce is a third of
 /// its size and can't be vacuumed; ripe produce lets go once the vacpack has pulled at it for its
 /// prefab's release time (<c>ResourceCycle.releasePrepTime</c>), then falls under physics (static
-/// analysis of <c>ResourceCycle</c>). Ripening over time is not modelled yet.
+/// analysis of <c>ResourceCycle</c>). Slimes leave hanging produce alone, ripe or not: it only becomes
+/// edible once it leaves its joint. Ripening over time is not modelled yet.
 /// </summary>
 public partial class CropHold : Node
 {
@@ -38,6 +39,7 @@ public partial class CropHold : Node
     {
         actor.FreezeMode = RigidBody3D.FreezeModeEnum.Kinematic;
         actor.Freeze = true;
+        actor.Edible = false;
         if (unripe)
         {
             actor.Vacuumable = false;
@@ -65,7 +67,9 @@ public partial class CropHold : Node
             h.PulledFor = h.Actor.CaughtBy is null ? 0 : h.PulledFor + delta;
             if (h.Actor.CaughtBy is not null && h.PulledFor >= h.ReleaseSeconds)
             {
+                // Letting go of the joint makes it edible (static analysis: ResourceCycle's edible step detaches it).
                 h.Actor.Freeze = false;
+                h.Actor.Edible = true;
                 _held.Remove(h);
             }
         }

@@ -8,6 +8,7 @@ using OpenRanch.Game.Player;
 using OpenRanch.Game.Vacpack;
 using OpenRanch.Game.World;
 using OpenRanch.Simulation;
+using WorldClock = OpenRanch.Ranch.WorldClock;
 
 namespace OpenRanch.Game.Slimes;
 
@@ -22,6 +23,7 @@ public partial class M2World : Node3D
     private readonly M2Check? _check;
     private readonly double _watchSeconds;
     private double _time;
+    private WorldTime? _worldTime;
 
     private M2World(GameInstall install, ZoneExtract zone, PhysicsLayers layers, PlayerController player, float startHour, string[] args)
     {
@@ -82,6 +84,29 @@ public partial class M2World : Node3D
     public VacpackTool Tool { get; }
     public MarketStand[] Stands { get; private set; } = [];
 
+    /// <summary>
+    /// Takes game time from the world clock from now on (docs/behavior/day-cycle.md): slime hunger,
+    /// plort timing and the market's days run on the world time, at its speed and through sleeping.
+    /// </summary>
+    public void Follow(WorldTime worldTime)
+    {
+        _worldTime = worldTime;
+        Clock.Set(worldTime.Ranch.WorldTime / WorldClock.SecondsPerHour);
+        SyncSpeed();
+        Market.Open(Clock.Day);
+    }
+
+    // The world clock runs at its own speed, and at ffSecsPerGameDay instead of secsPerGameDay while
+    // sleeping (both read from the install's TimeDirector; DayLength.Read).
+    private void SyncSpeed()
+    {
+        if (_worldTime is not { } w)
+            return;
+        var length = w.Cycle.Length;
+        Clock.Speed = w.Speed * Clock.SecondsPerGameDay
+                      / (w.Cycle.IsFastForwarding ? length.FastForwardRealSecondsPerDay : length.RealSecondsPerDay);
+    }
+
     /// <summary>Builds milestone 2's world, or returns null (with a warning) when the install's data can't be read.</summary>
     public static M2World? Create(GameInstall install, ZoneExtract zone, PhysicsLayers layers, PlayerController player, float startHour, string[] args)
     {
@@ -130,7 +155,8 @@ public partial class M2World : Node3D
             SetPhysicsProcess(false);
             return;
         }
-        var (_, newDay) = Clock.Advance(delta);
+        SyncSpeed();
+        var (_, newDay) = _worldTime is { } w ? Clock.Follow(w.Ranch.WorldTime / WorldClock.SecondsPerHour) : Clock.Advance(delta);
         if (newDay)
             Market.StartDay(Clock.Day);
         if (_check is not null && _check.Step(delta))

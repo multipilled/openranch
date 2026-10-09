@@ -29,6 +29,14 @@ public sealed class LiveRanch
     public IReadOnlyDictionary<int, int> Progress { get; init; } = new Dictionary<int, int>();
     /// <summary>Expansion doors the world has changed (<see cref="GameEnum.AccessDoorState"/>), by door id.</summary>
     public IReadOnlyDictionary<string, int> AccessDoors { get; init; } = new Dictionary<string, int>();
+    /// <summary>The vacpack's slots now, for each vacpack mode the world runs (<see cref="GameEnum.AmmoMode"/>); other modes keep the saved slots.</summary>
+    public IReadOnlyDictionary<int, IReadOnlyList<AmmoSlot>> Ammo { get; init; } = new Dictionary<int, IReadOnlyList<AmmoSlot>>();
+    /// <summary>The plort market's saturation now for each plort it buys (<see cref="GameEnum.ItemId"/>); others keep the saved value.</summary>
+    public IReadOnlyDictionary<int, float> MarketSaturation { get; init; } = new Dictionary<int, float>();
+    /// <summary>Where the player's feet are now, when the world placed the player from the save; null keeps the saved place.</summary>
+    public Vec3? PlayerPosition { get; init; }
+    /// <summary>The player's view now as the original stores it (pitch, yaw and roll, in Euler degrees); null keeps the saved view.</summary>
+    public Vec3? PlayerRotation { get; init; }
 
     /// <summary>
     /// The saved actors the world took in. Those still in <see cref="Actors"/> are written as they are
@@ -66,6 +74,14 @@ public static class RanchWriter
             ranch.Player.Progress[type] = count;
         foreach (var (door, state) in live.AccessDoors)
             ranch.AccessDoors[door] = state;
+        if (live.PlayerPosition is { } position)
+            ranch.Player.Position = position;
+        if (live.PlayerRotation is { } rotation)
+            ranch.Player.Rotation = rotation;
+        foreach (var (item, saturation) in live.MarketSaturation)
+            ranch.World.MarketSaturation[item] = saturation;
+        foreach (var (mode, slots) in live.Ammo)
+            ranch.Player.Ammo[mode] = slots.Select(s => s with { Emotions = new Dictionary<int, float>(s.Emotions) }).ToList();
 
         foreach (var (id, plot) in live.Plots)
         {

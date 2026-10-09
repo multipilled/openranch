@@ -81,8 +81,10 @@ ranch as it was loaded and lays over it what the running world changed; the game
 `game/scripts/SaveLoad/SaveWriter.cs`.
 
 - **From the world:** money on hand (money earned in play is also added to the money earned over
-  the game), the world time (the loaded time plus the game hours the clock has run since), and every
-  actor the world holds: position, rotation, type, and for slimes hunger and agitation.
+  the game), the world time (the world clock moves the loaded ranch's own time), every actor the
+  world holds (position, rotation, type, and for slimes hunger and agitation), the vacpack's slots
+  of normal play (vacpack.md, "Saved"), every plort's market saturation (plort-market.md, "Saved")
+  and, when the player was placed from the save, where the player stands and looks.
 - **Actors.** A saved actor the world took in is written where it is now, in its saved place in the
   list; one that left the game (eaten, sold, sucked up) is dropped. The loader tells the writer the
   save's id of every actor it put into the world (corral slimes and the zone's loose actors), so each
@@ -99,8 +101,11 @@ ranch as it was loaded and lays over it what the running world changed; the game
   about z, then x, then y, in its left-handed axes (Godot's rotation is mirrored in z first).
 - **Plots, progress and doors** are written as loaded: nothing in the world builds, upgrades or buys
   yet. The writer takes changes to them (`LiveRanch.Plots`, `Progress`, `AccessDoors`) for when it does.
-- **Everything else passes through** unchanged: the player's position, vacpack, upgrades, mail,
-  Slimepedia, gadgets, the market and the rest of the world.
+- **The player** is written where their feet are and with the view as the original stores it
+  (pitch and yaw in Euler degrees, the saved roll kept), only when the loader stood them there: a
+  player who saved in another zone than the one running keeps the saved place and view.
+- **Everything else passes through** unchanged: upgrades, mail, Slimepedia, gadgets, the Nimble
+  Valley's vacpack, the market's seed and the rest of the world.
 
 `--save FILE --save-out OUT` writes OUT once the world has settled (4 s, as `--m3-check`) and quits.
 In play, F5 writes to openranch's user folder (`user://saves/<game name>.ranch.json`); the original
@@ -109,6 +114,15 @@ has no save key (openranch's choice, UNVERIFIED.md).
 Until the loader hands over the save's ids, SaveWriter matches each actor the loader puts into the
 world to the saved actor of the same type standing exactly there (within 1 cm, during the first
 second).
+
+## Opening a saved ranch
+
+- The player stands where the save left them and looks the same way, when they saved in the zone
+  being opened (in its region set and inside one of its cells); otherwise they start at the zone's
+  spawn point. The save holds the feet and the view as pitch (down is positive) and yaw
+  (player-camera.md).
+- The vacpack holds the saved slots with the capacity of the player's upgrades, the market its saved
+  saturation, and the clock the saved world time (day-cycle.md).
 
 ## Checked
 
@@ -124,8 +138,10 @@ second).
 - `RanchWriterTests`: a world that changed nothing writes the ranch as loaded, byte for byte; actors
   are moved, dropped, kept and added with the original's next ids; the written file reads back
   through `RanchFiles.Read` as the merged ranch; Euler angles match the original's convention.
-- In Godot on `20220508105930_Game2_4`: `--save-out` after 4 s, then `--m3-check` on the written
-  file passes (twice). A second `--save-out` from the written file differs from the first only in
+- In Godot on `20220508105930_Game2_4` and `20181115184455_Logansfarm_5`: `--m3-check` (which
+  also compares the vacpack's slots, the market's saturation, the player's place and view and the
+  two clocks with the save), then `--save-out` after 4 s, then `--m3-check` on the written file:
+  all pass. A second `--save-out` from the written file differs from the first only in
   the world time and the 17 corral slimes' places and moods; the other 2640 actors and every other
   member are the same.
 - `SaveImportTests` builds a small save by hand in the original's layout, writes it to bytes, reads

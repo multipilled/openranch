@@ -110,7 +110,7 @@ public partial class SlimeActor : Actor
         {
             foreach (var item in _catalog.Live)
             {
-                if (item == this || item.CaughtBy is not null || Sim.Species.FoodEffect(item.Id) is not { } effect)
+                if (item == this || item.CaughtBy is not null || !item.Edible || Sim.Species.FoodEffect(item.Id) is not { } effect)
                     continue;
                 var drive = effect.IgnoresHunger ? 1f : Sim.Hunger;
                 if (drive < Sim.Species.Eating.MinDriveToEat)
@@ -144,7 +144,7 @@ public partial class SlimeActor : Actor
 
     private void GoForFood()
     {
-        if (_target is null || !IsInstanceValid(_target) || _target.Consumed || _target.CaughtBy is not null)
+        if (_target is null || !IsInstanceValid(_target) || _target.Consumed || _target.CaughtBy is not null || !_target.Edible)
         {
             _target = null;
             _activity = Activity.None;
@@ -234,7 +234,7 @@ public partial class SlimeActor : Actor
     // the products pop out after digesting (docs/behavior/slimes.md, "In the world: eating").
     private bool TryEat(Actor food)
     {
-        if (_busy || food.Consumed || food.CaughtBy is not null || !Sim.WillEat(food.Id))
+        if (_busy || food.Consumed || food.CaughtBy is not null || !food.Edible || !Sim.WillEat(food.Id))
             return false;
         _busy = true;
         food.Reserve();

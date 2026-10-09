@@ -17,6 +17,9 @@ namespace OpenRanch.Game.SaveLoad;
 /// A slime the save keeps in one of the zone's corrals, where it stood and which way it faced (Unity
 /// coordinates), its actor id in the save, and its saved hunger and agitation (0 to 1) when the save has them.
 /// </summary>
+/// <summary>Where the save's player stands (feet, Unity coordinates) and how they look: pitch (down is positive, -180 to 180) and yaw, in degrees.</summary>
+public sealed record PlayerStart(N.Vector3 Position, float Pitch, float Yaw);
+
 public sealed record SavedSlime(string Id, N.Vector3 Position, N.Vector3 EulerDegrees, long ActorId = 0, float? Hunger = null, float? Agitation = null);
 
 /// <summary>
@@ -61,6 +64,8 @@ public sealed class SavedRanch
     public ZoneRegions Zone { get; private init; } = new(0, []);
     /// <summary>What each plot on the zone's sites holds (crop, feeder, collector, stores, ash), by site id.</summary>
     public IReadOnlyDictionary<string, PlotContents> Contents { get; private init; } = new Dictionary<string, PlotContents>();
+    /// <summary>Where the save's player stands and looks, when that is in this zone; null when they saved somewhere else.</summary>
+    public PlayerStart? Player { get; private init; }
 
     /// <summary>Reads the save and lays its plots out on the sites of <paramref name="zoneName"/>.</summary>
     /// <param name="assets">The asset set the zone is built from; the plots' meshes and materials are taken from it.</param>
@@ -113,6 +118,14 @@ public sealed class SavedRanch
                     actor.Emotions.TryGetValue(hunger, out var h) ? h : null, actor.Emotions.TryGetValue(agitation, out var a) ? a : null));
         }
 
+        // The save keeps the player's feet and their view as Euler angles: pitch in x, yaw in y
+        // (docs/behavior/player-camera.md). Only a player in this zone's world and cells stands here.
+        var p = ranch.Player.Position;
+        var feet = new N.Vector3(p.X, p.Y, p.Z);
+        PlayerStart? player = ranch.Player.RegionSetId == zone.RegionSet && zone.Contains(feet)
+            ? new PlayerStart(feet, ranch.Player.Rotation.X > 180 ? ranch.Player.Rotation.X - 360 : ranch.Player.Rotation.X, ranch.Player.Rotation.Y)
+            : null;
+
         var state = new WorldState(ranch.Player.Progress, (float)ranch.Clock.Hour, Hidden: hidden);
         return new SavedRanch(path, ranch, plots, state, renderers, colliders, slimes)
         {
@@ -120,6 +133,7 @@ public sealed class SavedRanch
             Crops = crops,
             Zone = zone,
             Contents = contents,
+            Player = player,
         };
     }
 
@@ -147,6 +161,13 @@ public sealed class SavedRanch
     {
         m2.Wallet.Add(Ranch.Player.Money);
         var names = new GameEnums(m2.Scripts.Types);
+        // The vacpack holds what the save's player carried, with the capacity of their upgrades.
+        PlayerVacpack.Load(Ranch.Player, names, m2.Pack);
+        // The market takes the save's saturation, and its mood is drawn from the save's seed
+        // (openranch's own mood function, so the same save always gets the same prices).
+        m2.Market.Load(Ranch.World.MarketSaturation.ToDictionary(kv => names.Item(kv.Key), kv => kv.Value),
+            new WanderingMood(System.BitConverter.SingleToInt32Bits(Ranch.World.EconomySeed)));
+        m2.Market.Open(m2.Clock.Day);
         LooseActors = ZoneActors.Of(Ranch, Zone, names, Crops, id => GrowsOnCrops(m2, id));
         Callable.From(() => SpawnSlimes(m2)).CallDeferred();
         Callable.From(() => SpawnLoose(m2)).CallDeferred();
@@ -181,6 +202,7 @@ public sealed class SavedRanch
             // Unity's Euler angles turn about Z, then X, then Y, as System.Numerics' yaw, pitch and roll do.
             var e = saved.EulerDegrees * (Mathf.Pi / 180);
             actor.Transform = UnityConvert.Transform(N.Matrix4x4.CreateFromYawPitchRoll(e.Y, e.X, e.Z) * N.Matrix4x4.CreateTranslation(saved.Position));
+            actor.Edible = saved.Edible;
             if (saved.Joint is not null)
                 Hold.Add(actor, saved.Unripe, m2.Catalog.Prefabs.Get(saved.Id).RootFloat("ResourceCycle", "releasePrepTime", 0));
             SpawnedLoose.Add((saved, actor));

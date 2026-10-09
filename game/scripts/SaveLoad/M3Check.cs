@@ -30,10 +30,12 @@ public partial class M3Check : Node
     private readonly ZoneExtract _zone;
     private readonly Slimes.M2World _m2;
     private readonly GameEnums _names;
+    private readonly Player.PlayerController? _player;
     private double _time;
 
-    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install)
+    public M3Check(SavedRanch saved, ZoneExtract zone, Slimes.M2World m2, GameInstall install, Player.PlayerController? player = null)
     {
+        _player = player;
         Name = "M3Check";
         _saved = saved;
         _zone = zone;
@@ -185,8 +187,11 @@ public partial class M3Check : Node
         var heldSpawns = _saved.SpawnedLoose.Where(s => s.Saved.Joint is not null).ToList();
         var picked = heldSpawns.Count(s => !GodotObject.IsInstanceValid(s.Actor) || s.Actor.Consumed);
         var moved = heldSpawns.Where(s => hanging.Contains(s.Actor) && N.Vector3.Distance(Unity(s.Actor.GlobalPosition), s.Saved.Position) > 0.01f).ToList();
-        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count + picked == onJoints.Count && moved.Count == 0,
-            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging, {picked} eaten; " +
+        // Slimes leave hanging produce alone (CropHold), so nothing is picked without the vacpack.
+        var edibleHanging = hanging.Count(a => a.Edible);
+        Check(hold.Count == onJoints.Count && hold.UnripeCount == onJoints.Count(a => a.Unripe) && hanging.Count == onJoints.Count && picked == 0
+              && edibleHanging == 0 && moved.Count == 0,
+            $"produce on crops: {hold.Count} hung ({hold.UnripeCount} unripe), {hanging.Count} still hanging ({edibleHanging} edible), {picked} eaten; " +
             $"save {onJoints.Count} ({onJoints.Count(a => a.Unripe)} unripe); {moved.Count} moved");
 
         // Nothing loose fell through the ground; what slimes ate is reported.
@@ -219,11 +224,63 @@ public partial class M3Check : Node
         // Money.
         Check(_m2.Wallet.Coins == ranch.Player.Money, $"money: wallet {_m2.Wallet.Coins}, save {ranch.Player.Money}");
 
+        // Vacpack: the slots of normal play hold what the save's player carried, moods and all.
+        var savedSlots = reader.Player.Ammo.GetValueOrDefault(_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)) ?? [];
+        var packWrong = new List<string>();
+        for (var i = 0; i < Simulation.Vacpack.TotalSlots; i++)
+        {
+            var want = i < savedSlots.Count ? PlayerVacpack.Slot(savedSlots[i], _names) : null;
+            var have = _m2.Pack[i];
+            if (want?.Id != have?.Id || want?.Count != have?.Count
+                || (want is not null && have is not null && !want.Moods.OrderBy(m => m.Key).SequenceEqual(have.Moods.OrderBy(m => m.Key))))
+                packWrong.Add($"slot {i + 1}: {Slot(have)}, save {Slot(want)}");
+        }
+        Check(packWrong.Count == 0, $"vacpack: {string.Join(", ", Enumerable.Range(0, Simulation.Vacpack.TotalSlots).Select(i => Slot(_m2.Pack[i])))}; " +
+                                    $"{_m2.Pack.UsableSlots} slots usable, {_m2.Pack.MaxPerSlot} per slot" + string.Concat(packWrong.Select(w => "\n         differs: " + w)));
+
+        // Market: every plort the market buys has the save's saturation, and today's prices are set.
+        var marketWrong = new List<string>();
+        var savedSaturation = reader.World.MarketSaturation.ToDictionary(kv => _names.Item(kv.Key), kv => kv.Value);
+        foreach (var (id, saturation) in _m2.Market.Saturations)
+            if (savedSaturation.TryGetValue(id, out var want) && want != saturation)
+                marketWrong.Add($"{id}: {saturation:F3}, save {want:F3}");
+        var marketKnown = savedSaturation.Keys.Count(_m2.Market.Accepts);
+        var pink = _m2.Market.Accepts("PINK_PLORT") ? $"; pink plort {_m2.Market.Price("PINK_PLORT")} today" : "";
+        Check(marketWrong.Count == 0 && marketKnown > 0,
+            $"market: {marketKnown} of the market's {_m2.Market.Accepted.Count()} plorts carry the save's saturation " +
+            $"({savedSaturation.Count} in the save){pink}" + string.Concat(marketWrong.Take(5).Select(w => "\n         differs: " + w)));
+
+        // Player: standing where the save left them (feet; the body settles a little in 4 s) and looking the same way.
+        var savedPlayer = reader.Player;
+        if (_saved.Player is null || _player is null)
+            report.AppendLine($"  info player saved outside the zone (region set {savedPlayer.RegionSetId} at {savedPlayer.Position}); starts at the zone's spawn");
+        else
+        {
+            var at = Unity(_player.GlobalPosition);
+            var off = N.Vector3.Distance(at, new N.Vector3(savedPlayer.Position.X, savedPlayer.Position.Y, savedPlayer.Position.Z));
+            float Turn(float a, float b) => System.Math.Abs(((a - b) % 360 + 540) % 360 - 180);
+            var pitch = -Mathf.RadToDeg(_player.Camera.Rotation.X);
+            var yaw = -Mathf.RadToDeg(_player.Rotation.Y);
+            var pitchOff = Turn(pitch, savedPlayer.Rotation.X);
+            var yawOff = Turn(yaw, savedPlayer.Rotation.Y);
+            Check(off < 0.5f && pitchOff < 0.01f && yawOff < 0.01f,
+                $"player: at {at.X:F2}, {at.Y:F2}, {at.Z:F2} ({off:F3} m from the save), pitch {pitch:F2}, yaw {yaw:F2} " +
+                $"(save {savedPlayer.Rotation.X:F2}, {savedPlayer.Rotation.Y:F2})");
+        }
+
+        // One clock: milestone 2's game time is the world clock's.
+        var worldHours = ranch.WorldTime / WorldClock.SecondsPerHour;
+        Check(System.Math.Abs(_m2.Clock.TotalHours - worldHours) < 1e-4 && _m2.Clock.Day == ranch.Clock.Day - 1 && _m2.Market.Day == _m2.Clock.Day,
+            $"game clock: {_m2.Clock.TotalHours:F4} h, day {_m2.Clock.Day + 1}, market day {_m2.Market.Day + 1}; world clock {worldHours:F4} h ({ranch.Clock})");
+
         report.Append(passed ? "m3-check PASS" : "m3-check FAIL");
         return (passed, report.ToString());
     }
 
     private static N.Vector3 Unity(Vector3 v) => new(v.X, v.Y, -v.Z);
+
+    private static string Slot(Simulation.VacSlot? slot) =>
+        slot is null ? "empty" : $"{slot.Count} {slot.Id}" + (slot.Moods.Count > 0 ? $" ({string.Join(" ", slot.Moods.Select(m => $"{m.Key.ToLowerInvariant()} {m.Value:F2}"))})" : "");
 
     private static Dictionary<string, int> Count(IEnumerable<string> ids) => ids.GroupBy(i => i).ToDictionary(g => g.Key, g => g.Count());
 

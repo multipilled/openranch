@@ -77,4 +77,37 @@ public class VacpackTests
         Assert.False(pack.TryAdd("GORDO_THING"));
         Assert.True(pack.TryAdd("PINK_PLORT"));
     }
+
+    [Fact]
+    public void Slimes_average_their_moods_into_the_slot_each_weighing_one_over_the_new_count()
+    {
+        var pack = new Vacpack();
+        Assert.True(pack.TryAdd("PINK_SLIME", new Dictionary<string, float> { ["HUNGER"] = 0.9f, ["AGITATION"] = 0.3f }));
+        Assert.Equal(0.9f, pack[0]!.Moods["HUNGER"], 5);
+        Assert.True(pack.TryAdd("PINK_SLIME", new Dictionary<string, float> { ["HUNGER"] = 0.1f, ["AGITATION"] = 0.6f }));
+        Assert.Equal(0.5f, pack[0]!.Moods["HUNGER"], 5);
+        Assert.Equal(0.45f, pack[0]!.Moods["AGITATION"], 5);
+        Assert.True(pack.TryAdd("PINK_SLIME", new Dictionary<string, float> { ["HUNGER"] = 0.8f, ["AGITATION"] = 0.45f }));
+        Assert.Equal(0.6f, pack[0]!.Moods["HUNGER"], 5);
+        // Things without moods leave the slot's alone; an emptied slot forgets them.
+        pack.TryAdd("CARROT_VEGGIE");
+        Assert.Empty(pack[1]!.Moods);
+        for (var i = 0; i < 3; i++)
+            pack.Take(0);
+        Assert.Null(pack[0]);
+    }
+
+    [Fact]
+    public void A_restored_slot_holds_what_it_is_given_and_an_empty_count_is_an_empty_slot()
+    {
+        var pack = new Vacpack();
+        pack.SetCapacityLevel(4);
+        Assert.Equal(100, pack.MaxPerSlot);
+        pack.Restore(2, new VacSlot("PINK_PLORT", 87));
+        pack.Restore(3, new VacSlot("POGO_FRUIT", 0));
+        Assert.Equal(87, pack.Count("PINK_PLORT"));
+        Assert.Null(pack[3]);
+        Assert.True(pack.TryAdd("PINK_PLORT"));
+        Assert.Equal(88, pack[2]!.Count);
+    }
 }

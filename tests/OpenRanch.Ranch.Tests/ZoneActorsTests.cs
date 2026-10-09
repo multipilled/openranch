@@ -16,6 +16,7 @@ public class ZoneActorsTests
             [(GameEnum.ResourceCycleState, "UNRIPE")] = 0,
             [(GameEnum.ResourceCycleState, "RIPE")] = 1,
             [(GameEnum.ResourceCycleState, "EDIBLE")] = 2,
+            [(GameEnum.ResourceCycleState, "ROTTEN")] = 3,
         };
 
         public string Name(string label, long value) =>
@@ -64,6 +65,14 @@ public class ZoneActorsTests
         var loaded = Load(Item(2, 10.2f, 1, 0, cycle: 1), Item(2, 30, 1, 0, cycle: 0));
         Assert.All(loaded, a => Assert.Null(a.Joint));
         Assert.All(loaded, a => Assert.False(a.Unripe));
+    }
+
+    [Fact]
+    public void Slimes_may_eat_only_produce_that_is_loose_and_not_rotten()
+    {
+        var loaded = Load(Item(2, 10.05f, 1, 0, cycle: 0), Item(2, 11, 1.02f, 0, cycle: 1), Item(2, 5, 0, 5, cycle: 2),
+            Item(2, 6, 0, 5, cycle: 3), Item(2, 30, 1, 0, cycle: 1), Item(3, 5, 0, 5));
+        Assert.Equal([false, false, true, false, true, true], loaded.Select(a => a.Edible));
     }
 
     [Fact]

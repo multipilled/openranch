@@ -31,21 +31,21 @@ public partial class SaveWriter : Node
     private readonly GameEnums _names;
     private readonly string? _outPath;
     private readonly bool _quitAfterWrite;
-    private readonly double _startHours;
+    private readonly Player.PlayerController? _player;
     private readonly int _hunger, _agitation;
     private int _earned;
     private double _time;
     private bool _wroteOut;
 
-    public SaveWriter(SavedRanch saved, Slimes.M2World m2, GameInstall install, string? outPath, bool quitAfterWrite)
+    public SaveWriter(SavedRanch saved, Slimes.M2World m2, GameInstall install, string? outPath, bool quitAfterWrite, Player.PlayerController? player = null)
     {
+        _player = player;
         Name = "SaveWriter";
         _saved = saved;
         _m2 = m2;
         _names = new GameEnums(install);
         _outPath = outPath;
         _quitAfterWrite = quitAfterWrite;
-        _startHours = m2.Clock.TotalHours;
         _hunger = _names.Value(GameEnum.Emotion, "HUNGER");
         _agitation = _names.Value(GameEnum.Emotion, "AGITATION");
 
@@ -116,14 +116,31 @@ public partial class SaveWriter : Node
         var kept = actors.Count(a => a.ActorId is not null);
         counts = (kept, actors.Count - kept, tracked.Count - kept);
 
+        // The player is written where they stand when the loader placed them from the save; a player
+        // who saved in another zone keeps the saved place.
+        Vec3? playerAt = null, playerView = null;
+        if (_player is not null && _saved.Player is not null)
+        {
+            var feet = Unity(_player.GlobalPosition);
+            playerAt = new Vec3(feet.X, feet.Y, feet.Z);
+            // Godot's yaw and pitch turn the other way from the original's (see Ranch.cs).
+            playerView = new Vec3(Degrees360(-Mathf.RadToDeg(_player.Camera.Rotation.X)), Degrees360(-Mathf.RadToDeg(_player.Rotation.Y)), ranch.Player.Rotation.Z);
+        }
+
         var live = new LiveRanch
         {
+            PlayerPosition = playerAt,
+            PlayerRotation = playerView,
             Money = _m2.Wallet.Coins,
             MoneyEarned = _earned,
-            // The world clock runs in game hours from the save's time (WorldClock: 3600 game seconds an hour).
-            WorldTime = ranch.WorldTime + (_m2.Clock.TotalHours - _startHours) * WorldClock.SecondsPerHour,
+            // The world clock (World/WorldTime.cs) moves the loaded ranch's world time itself.
+            WorldTime = ranch.WorldTime,
             // Plots stand as loaded: nothing in the world builds or upgrades them yet.
             Plots = _saved.Plots.ToDictionary(p => p.Site.Id, p => new LivePlot(p.Plot.Type, p.Plot.Upgrades)),
+            MarketSaturation = _m2.Market.Saturations.Where(kv => TryType(kv.Key, out _))
+                .ToDictionary(kv => _names.Value(GameEnum.ItemId, kv.Key), kv => kv.Value),
+            // The vacpack of normal play; a slime sucked up left the world and is kept here.
+            Ammo = new Dictionary<int, IReadOnlyList<AmmoSlot>> { [_names.Value(GameEnum.AmmoMode, PlayerVacpack.DefaultMode)] = PlayerVacpack.Save(_m2.Pack, _names) },
             TrackedActorIds = tracked,
             Actors = actors,
         };
@@ -164,4 +181,13 @@ public partial class SaveWriter : Node
     }
 
     private static N.Vector3 Unity(Vector3 v) => new(v.X, v.Y, -v.Z);
+
+    // Euler angles as the original stores them: 0 up to 360.
+    private static float Degrees360(float degrees)
+    {
+        var d = degrees % 360f;
+        if (d < 0)
+            d += 360f;
+        return d >= 360f ? 0f : d;
+    }
 }
